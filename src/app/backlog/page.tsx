@@ -104,45 +104,64 @@ export default function BacklogPage() {
   function printSelected() {
     const rows = getSelectedEntries()
     if (rows.length === 0) { showMsg('error', 'No rows selected!'); return }
-    const html = `
-      <html><head><title>Backlog Entries Print</title>
-      <style>
-        body { font-family: Arial, sans-serif; font-size: 11px; }
-        table { border-collapse: collapse; width: 100%; }
-        th { background: #1e3a5f; color: white; padding: 6px 8px; text-align: left; }
-        td { padding: 5px 8px; border-bottom: 1px solid #ddd; }
-        tr:nth-child(even) td { background: #f5f5f5; }
-        @media print { body { margin: 0; } }
-      </style></head>
-      <body>
-        <h2 style="color:#1e3a5f">परिवहन विभाग, धमतरी — Backlog Entries</h2>
-        <p>Total Selected: ${rows.length}</p>
-        <table>
-          <thead><tr>
-            <th>#</th><th>Date</th><th>Vehicle No</th><th>Given By</th><th>Mobile</th>
-            <th>Chassis</th><th>Engine</th><th>F22</th><th>F21</th><th>INV</th><th>RC</th><th>1stINC</th>
-            <th>Letter No</th><th>Letter Date</th><th>Send Date</th><th>Status</th><th>Print Lot</th><th>Remarks</th>
-          </tr></thead>
-          <tbody>
-            ${rows.map((e, i) => `<tr>
-              <td>${i + 1}</td>
-              <td>${e.received_date || ''}</td>
-              <td><b>${e.vehicle_no}</b></td>
-              <td>${e.given_by}</td>
-              <td>${e.mobile_no}</td>
-              <td>${e.chassis_no}</td>
-              <td>${e.engine_no}</td>
-              <td>${e.form22}</td><td>${e.form21}</td><td>${e.invoice}</td><td>${e.rc}</td><td>${e.first_inc}</td>
-              <td>${e.letter_no}</td>
-              <td>${e.letter_making_date || ''}</td>
-              <td>${e.letter_sending_date || ''}</td>
-              <td>${e.letter_status}</td>
-              <td>${e.print_lot}</td>
-              <td>${e.remarks}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </body></html>`
+    const html = `<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<title>पंजीकृत वाहनों के बैकलॉग रिपोर्ट</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&display=swap');
+  body { font-family: 'Noto Sans Devanagari', sans-serif; margin: 40px; line-height: 1.5; }
+  h2 { text-align: center; text-decoration: underline; margin-bottom: 20px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 20px; font-size: 15px; }
+  th, td { border: 1px solid #000; padding: 8px; text-align: center; }
+  th { background: #f2f2f2; }
+  .footer-container { text-align: right; margin-top: 120px; }
+  .signature-block { display: inline-block; text-align: center; font-weight: bold; font-size: 18px; }
+  .print-btn { display: inline-block; background: #007bff; color: white; padding: 10px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+  @media print { .no-print { display: none; } }
+</style>
+</head>
+<body>
+<div class="no-print" style="text-align:center; margin-bottom: 20px;">
+  <button class="print-btn" onclick="window.print()">🖨️ Print this page</button>
+</div>
+<h2>पंजीकृत वाहनों के बैकलॉग प्रविष्टि हेतु जानकारी</h2>
+<table>
+  <thead>
+    <tr>
+      <th>S.No</th>
+      <th>Vehicle No</th>
+      <th>Chassis No</th>
+      <th>Engine No</th>
+      <th>Form 22</th>
+      <th>Form 21</th>
+      <th>Invoice</th>
+      <th>1st INC</th>
+      <th>Remarks</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rows.map((e, i) => `<tr>
+      <td>${i + 1}</td>
+      <td>${e.vehicle_no}</td>
+      <td>${e.chassis_no}</td>
+      <td>${e.engine_no}</td>
+      <td>${e.form22}</td>
+      <td>${e.form21}</td>
+      <td>${e.invoice}</td>
+      <td>${e.first_inc}</td>
+      <td>${e.remarks ? e.remarks.replace(/\n/g, '<br>') : '-'}</td>
+    </tr>`).join('')}
+  </tbody>
+</table>
+<div class="footer-container">
+  <div class="signature-block">
+    जिला परिवहन अधिकारी,<br>
+    धमतरी (छ.ग.)
+  </div>
+</div>
+</body></html>`
     const w = window.open('', '_blank')
     if (w) { w.document.write(html); w.document.close(); w.print() }
   }
