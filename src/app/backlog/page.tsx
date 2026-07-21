@@ -111,12 +111,13 @@ export default function BacklogPage() {
 <title>पंजीकृत वाहनों के बैकलॉग रिपोर्ट</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&display=swap');
-  body { font-family: 'Noto Sans Devanagari', sans-serif; margin: 40px; line-height: 1.5; }
+  @page { size: A4 landscape; margin: 15mm; }
+  body { font-family: 'Noto Sans Devanagari', sans-serif; margin: 20px; line-height: 1.5; }
   h2 { text-align: center; text-decoration: underline; margin-bottom: 20px; }
-  table { border-collapse: collapse; width: 100%; margin-top: 20px; font-size: 15px; }
-  th, td { border: 1px solid #000; padding: 8px; text-align: center; }
+  table { border-collapse: collapse; width: 100%; margin-top: 20px; font-size: 13px; }
+  th, td { border: 1px solid #000; padding: 7px 10px; text-align: center; word-break: break-word; }
   th { background: #f2f2f2; }
-  .footer-container { text-align: right; margin-top: 120px; }
+  .footer-container { text-align: right; margin-top: 80px; }
   .signature-block { display: inline-block; text-align: center; font-weight: bold; font-size: 18px; }
   .print-btn { display: inline-block; background: #007bff; color: white; padding: 10px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
   @media print { .no-print { display: none; } }
