@@ -45,6 +45,8 @@ export default function SubsidyPage() {
   const [bulkSaving, setBulkSaving] = useState(false)
   const [bulkMode, setBulkMode] = useState<'skip' | 'replace'>('skip')
   const [bulkLog, setBulkLog] = useState<string | null>(null)
+  const [showDeleteAll, setShowDeleteAll] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
 
   useEffect(() => { fetchEntries() }, [])
 
@@ -114,6 +116,15 @@ export default function SubsidyPage() {
     setDeleteId(null)
     if (error) showMsg('error', error.message)
     else { showMsg('success', 'Entry deleted.'); fetchEntries() }
+  }
+
+  async function handleDeleteAll() {
+    setDeletingAll(true)
+    const { error } = await supabase.from('subsidy_entries').delete().neq('id', 0)
+    setDeletingAll(false)
+    setShowDeleteAll(false)
+    if (error) showMsg('error', error.message)
+    else { showMsg('success', 'All subsidy records deleted.'); fetchEntries() }
   }
 
   async function handleBulkImport() {
@@ -192,9 +203,12 @@ export default function SubsidyPage() {
             <h1 className="text-2xl font-bold text-blue-900">Subsidy Entries</h1>
             <p className="text-sm text-gray-500 mt-0.5">Total: {filtered.length} entries</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => setShowDeleteAll(true)} className="px-4 py-2 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 transition">
+              🗑️ Delete All
+            </button>
             <button onClick={() => setShowBulk(true)} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
-              Bulk Import
+              📥 Bulk Import
             </button>
             <button onClick={openAdd} className="px-4 py-2 rounded-lg bg-blue-900 text-white text-sm font-medium hover:bg-blue-800 transition">
               + Add Entry
@@ -393,7 +407,7 @@ export default function SubsidyPage() {
         </div>
       )}
 
-      {/* Delete Confirm */}
+      {/* Delete Single Confirm */}
       {deleteId !== null && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
@@ -402,6 +416,23 @@ export default function SubsidyPage() {
             <div className="flex justify-end gap-3">
               <button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Cancel</button>
               <button onClick={() => handleDelete(deleteId)} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete ALL Confirm */}
+      {showDeleteAll && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border-2 border-red-500">
+            <h3 className="text-xl font-bold text-red-700 mb-2">⚠️ Delete ALL Records?</h3>
+            <p className="text-sm text-gray-700 mb-1">This will permanently delete <strong>all {entries.length} subsidy entries</strong>.</p>
+            <p className="text-sm text-red-600 font-semibold mb-5">This action cannot be undone!</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowDeleteAll(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDeleteAll} disabled={deletingAll} className="px-5 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-60">
+                {deletingAll ? 'Deleting...' : 'Yes, Delete All'}
+              </button>
             </div>
           </div>
         </div>
