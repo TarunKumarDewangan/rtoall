@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase, BacklogEntry } from '@/lib/supabase'
+import PinModal from '@/components/PinModal'
 
 const STATUS_OPTIONS = ['Pending', 'Whitelisted', 'Done', 'Sent', 'SEND INCOMPLETE', 'WHITELISTED BUT DOCINCOM', 'LetterMaking']
 
@@ -51,6 +52,7 @@ export default function BacklogPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [pinAction, setPinAction] = useState<null | { type: 'edit'; entry: BacklogEntry } | { type: 'delete'; id: number }>(null)
 
   const fetchEntries = useCallback(async () => {
     setLoading(true)
@@ -200,6 +202,24 @@ export default function BacklogPage() {
     setEditEntry(null)
     setForm(EMPTY_FORM)
     setShowForm(true)
+  }
+
+  function requestEdit(entry: BacklogEntry) {
+    setPinAction({ type: 'edit', entry })
+  }
+
+  function requestDelete(id: number) {
+    setPinAction({ type: 'delete', id })
+  }
+
+  function onPinSuccess() {
+    if (!pinAction) return
+    if (pinAction.type === 'edit') {
+      openEdit(pinAction.entry)
+    } else if (pinAction.type === 'delete') {
+      setDeleteId(pinAction.id)
+    }
+    setPinAction(null)
   }
 
   function openEdit(entry: BacklogEntry) {
@@ -380,8 +400,8 @@ export default function BacklogPage() {
                       <td className="px-2 py-2">{entry.print_lot}</td>
                       <td className="px-2 py-2">
                         <div className="flex gap-1">
-                          <button onClick={() => openEdit(entry)} className="px-2 py-1 rounded bg-yellow-100 text-yellow-800 hover:bg-yellow-200 text-xs font-medium">Edit</button>
-                          <button onClick={() => setDeleteId(entry.id!)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
+                          <button onClick={() => requestEdit(entry)} className="px-2 py-1 rounded bg-yellow-100 text-yellow-800 hover:bg-yellow-200 text-xs font-medium">Edit</button>
+                          <button onClick={() => requestDelete(entry.id!)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
                         </div>
                       </td>
                     </tr>
@@ -474,6 +494,15 @@ export default function BacklogPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* PIN Modal */}
+      {pinAction && (
+        <PinModal
+          action={pinAction.type === 'edit' ? 'edit this entry' : 'delete this entry'}
+          onSuccess={onPinSuccess}
+          onCancel={() => setPinAction(null)}
+        />
       )}
 
       {/* Delete Confirm */}

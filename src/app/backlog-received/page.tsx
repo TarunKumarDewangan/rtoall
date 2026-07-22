@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase, BacklogReceived } from '@/lib/supabase'
+import PinModal from '@/components/PinModal'
 
 const EMPTY_FORM = {
   transaction_type: '',
@@ -28,6 +29,7 @@ export default function BacklogReceivedPage() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [pinAction, setPinAction] = useState<null | { type: 'edit'; entry: BacklogReceived } | { type: 'delete'; id: number }>(null)
 
   useEffect(() => { fetchEntries() }, [])
 
@@ -55,6 +57,15 @@ export default function BacklogReceivedPage() {
   function showMsg(type: 'success' | 'error', text: string) {
     setMessage({ type, text })
     setTimeout(() => setMessage(null), 3500)
+  }
+
+  function requestEdit(entry: BacklogReceived) { setPinAction({ type: 'edit', entry }) }
+  function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
+  function onPinSuccess() {
+    if (!pinAction) return
+    if (pinAction.type === 'edit') openEdit(pinAction.entry)
+    else if (pinAction.type === 'delete') setDeleteId(pinAction.id)
+    setPinAction(null)
   }
 
   function openAdd() {
@@ -179,8 +190,8 @@ export default function BacklogReceivedPage() {
                     <td className="px-3 py-2 text-xs max-w-xs truncate" title={entry.remarks}>{entry.remarks || '—'}</td>
                     <td className="px-3 py-2 text-xs">
                       <div className="flex gap-1">
-                        <button onClick={() => openEdit(entry)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
-                        <button onClick={() => setDeleteId(entry.id)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
+                        <button onClick={() => requestEdit(entry)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
+                        <button onClick={() => requestDelete(entry.id)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
                       </div>
                     </td>
                   </tr>
@@ -226,6 +237,15 @@ export default function BacklogReceivedPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* PIN Modal */}
+      {pinAction && (
+        <PinModal
+          action={pinAction.type === 'edit' ? 'edit this record' : 'delete this record'}
+          onSuccess={onPinSuccess}
+          onCancel={() => setPinAction(null)}
+        />
       )}
 
       {/* Delete Confirm */}

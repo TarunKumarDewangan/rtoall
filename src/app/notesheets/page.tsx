@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase, Notesheet } from '@/lib/supabase'
+import PinModal from '@/components/PinModal'
 
 const EMPTY_FORM = {
   note_date: '',
@@ -28,6 +29,7 @@ export default function NotesheetsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [pinAction, setPinAction] = useState<null | { type: 'edit'; entry: Notesheet } | { type: 'delete'; id: number }>(null)
 
   useEffect(() => { fetchNotesheets() }, [])
 
@@ -53,6 +55,15 @@ export default function NotesheetsPage() {
   function showMsg(type: 'success' | 'error', text: string) {
     setMessage({ type, text })
     setTimeout(() => setMessage(null), 3500)
+  }
+
+  function requestEdit(entry: Notesheet) { setPinAction({ type: 'edit', entry }) }
+  function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
+  function onPinSuccess() {
+    if (!pinAction) return
+    if (pinAction.type === 'edit') openEdit(pinAction.entry)
+    else if (pinAction.type === 'delete') setDeleteId(pinAction.id)
+    setPinAction(null)
   }
 
   function openAdd() {
@@ -150,8 +161,8 @@ export default function NotesheetsPage() {
                       </div>
                     </div>
                     <div className="flex gap-2 ml-4 flex-shrink-0">
-                      <button onClick={() => openEdit(note)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
-                      <button onClick={() => setDeleteId(note.id)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Delete</button>
+                      <button onClick={() => requestEdit(note)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
+                      <button onClick={() => requestDelete(note.id)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Delete</button>
                     </div>
                   </div>
                   <div className="px-5 pb-4">
@@ -207,6 +218,15 @@ export default function NotesheetsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* PIN Modal */}
+      {pinAction && (
+        <PinModal
+          action={pinAction.type === 'edit' ? 'edit this notesheet' : 'delete this notesheet'}
+          onSuccess={onPinSuccess}
+          onCancel={() => setPinAction(null)}
+        />
       )}
 
       {/* Delete Confirm */}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase, ModifyLetter } from '@/lib/supabase'
+import PinModal from '@/components/PinModal'
 
 function formatDateDisplay(dateStr: string | null) {
   if (!dateStr) return '—'
@@ -17,6 +18,7 @@ export default function ModifyLettersPage() {
   const [search, setSearch] = useState('')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [pinDeleteId, setPinDeleteId] = useState<number | null>(null)
 
   useEffect(() => { fetchLetters() }, [])
 
@@ -123,7 +125,7 @@ export default function ModifyLettersPage() {
                       View / Print
                     </Link>
                     <button
-                      onClick={() => setDeleteId(letter.id)}
+                      onClick={() => setPinDeleteId(letter.id)}
                       className="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 text-xs font-semibold transition"
                     >
                       Delete
@@ -135,6 +137,15 @@ export default function ModifyLettersPage() {
           </div>
         )}
       </div>
+
+      {/* PIN Modal */}
+      {pinDeleteId !== null && (
+        <PinModal
+          action="delete this modification letter"
+          onSuccess={() => { setDeleteId(pinDeleteId); setPinDeleteId(null) }}
+          onCancel={() => setPinDeleteId(null)}
+        />
+      )}
 
       {/* Delete Confirm */}
       {deleteId !== null && (

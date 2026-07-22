@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase, SubsidyEntry } from '@/lib/supabase'
+import PinModal from '@/components/PinModal'
 
 const BOOL_FIELDS = ['has_receipt', 'has_invoice', 'has_passbook', 'has_aadhaar', 'has_rc'] as const
 type BoolField = typeof BOOL_FIELDS[number]
@@ -47,6 +48,7 @@ export default function SubsidyPage() {
   const [bulkLog, setBulkLog] = useState<string | null>(null)
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
+  const [pinAction, setPinAction] = useState<null | { type: 'edit'; entry: SubsidyEntry } | { type: 'delete'; id: number } | { type: 'deleteAll' }>(null)
 
   useEffect(() => { fetchEntries() }, [])
 
@@ -70,6 +72,17 @@ export default function SubsidyPage() {
   function showMsg(type: 'success' | 'error', text: string) {
     setMessage({ type, text })
     setTimeout(() => setMessage(null), 3500)
+  }
+
+  function requestEdit(entry: SubsidyEntry) { setPinAction({ type: 'edit', entry }) }
+  function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
+  function requestDeleteAll() { setPinAction({ type: 'deleteAll' }) }
+  function onPinSuccess() {
+    if (!pinAction) return
+    if (pinAction.type === 'edit') openEdit(pinAction.entry)
+    else if (pinAction.type === 'delete') setDeleteId(pinAction.id)
+    else if (pinAction.type === 'deleteAll') setShowDeleteAll(true)
+    setPinAction(null)
   }
 
   function openAdd() {
@@ -204,7 +217,7 @@ export default function SubsidyPage() {
             <p className="text-sm text-gray-500 mt-0.5">Total: {filtered.length} entries</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => setShowDeleteAll(true)} className="px-4 py-2 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 transition">
+            <button onClick={requestDeleteAll} className="px-4 py-2 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 transition">
               🗑️ Delete All
             </button>
             <button onClick={() => setShowBulk(true)} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
@@ -265,8 +278,8 @@ export default function SubsidyPage() {
                       </td>
                       <td className="px-3 py-2 text-xs">
                         <div className="flex gap-1">
-                          <button onClick={() => openEdit(entry)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
-                          <button onClick={() => setDeleteId(entry.id)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
+                          <button onClick={() => requestEdit(entry)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
+                          <button onClick={() => requestDelete(entry.id)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
                         </div>
                       </td>
                     </tr>
@@ -405,6 +418,15 @@ export default function SubsidyPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* PIN Modal */}
+      {pinAction && (
+        <PinModal
+          action={pinAction.type === 'edit' ? 'edit this entry' : pinAction.type === 'delete' ? 'delete this entry' : 'delete ALL records'}
+          onSuccess={onPinSuccess}
+          onCancel={() => setPinAction(null)}
+        />
       )}
 
       {/* Delete Single Confirm */}
