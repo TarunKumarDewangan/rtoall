@@ -43,6 +43,8 @@ export default function SubsidyPage() {
   const [bulkDate, setBulkDate] = useState('')
   const [bulkBy, setBulkBy] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [bulkMode, setBulkMode] = useState<'skip' | 'replace'>('skip')
+  const [bulkLog, setBulkLog] = useState<string | null>(null)
 
   useEffect(() => { fetchEntries() }, [])
 
@@ -115,15 +117,41 @@ export default function SubsidyPage() {
   }
 
   async function handleBulkImport() {
-    const vehicles = bulkText
+    const allVehicles = bulkText
       .split(/[\n,]+/)
       .map(v => v.trim().toUpperCase())
       .filter(v => v.length > 0)
 
-    if (vehicles.length === 0) { showMsg('error', 'No vehicle numbers found.'); return }
+    if (allVehicles.length === 0) { showMsg('error', 'No vehicle numbers found.'); return }
 
     setBulkSaving(true)
-    const rows = vehicles.map(vehicle_no => ({
+    setBulkLog(null)
+
+    let toImport = allVehicles
+
+    if (bulkMode === 'replace') {
+      // Delete all existing records first
+      await supabase.from('subsidy_entries').delete().neq('id', 0)
+    } else {
+      // Skip mode: fetch existing vehicle numbers and filter them out
+      const { data: existing } = await supabase
+        .from('subsidy_entries')
+        .select('vehicle_no')
+      const existingSet = new Set((existing || []).map((e: { vehicle_no: string }) => e.vehicle_no.toUpperCase()))
+      const skipped = allVehicles.filter(v => existingSet.has(v))
+      toImport = allVehicles.filter(v => !existingSet.has(v))
+      if (skipped.length > 0) {
+        setBulkLog(`Skipped ${skipped.length} already existing: ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? '...' : ''}`)
+      }
+    }
+
+    if (toImport.length === 0) {
+      setBulkSaving(false)
+      showMsg('error', 'All vehicle numbers already exist! Nothing to import.')
+      return
+    }
+
+    const rows = toImport.map(vehicle_no => ({
       vehicle_no,
       date_submitted: bulkDate || null,
       entry_by: bulkBy,
@@ -138,11 +166,12 @@ export default function SubsidyPage() {
     setBulkSaving(false)
     if (error) showMsg('error', error.message)
     else {
-      showMsg('success', `${vehicles.length} entries imported successfully!`)
+      showMsg('success', `${toImport.length} entries imported successfully!`)
       setShowBulk(false)
       setBulkText('')
       setBulkDate('')
       setBulkBy('')
+      setBulkLog(null)
       fetchEntries()
     }
   }
@@ -292,7 +321,32 @@ export default function SubsidyPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center overflow-y-auto py-8">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6">
             <h2 className="text-lg font-bold text-blue-900 mb-2">Bulk Import Vehicle Numbers</h2>
-            <p className="text-sm text-gray-500 mb-4">Paste vehicle numbers separated by commas or new lines. All entries will use the same date and entered-by.</p>
+            <p className="text-sm text-gray-500 mb-4">Paste vehicle numbers separated by commas or new lines.</p>
+
+            {/* Import Mode */}
+            <div className="mb-4 rounded-lg border border-gray-200 overflow-hidden">
+              <div
+                onClick={() => setBulkMode('skip')}
+                className={`flex items-start gap-3 p-3 cursor-pointer transition ${bulkMode === 'skip' ? 'bg-blue-50 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}
+              >
+                <input type="radio" checked={bulkMode === 'skip'} onChange={() => setBulkMode('skip')} className="mt-1" />
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">Smart Import (Skip Duplicates) ✅ Recommended</p>
+                  <p className="text-xs text-gray-500">If 430 records exist, only imports from 431 onwards. Already existing vehicle numbers are skipped automatically.</p>
+                </div>
+              </div>
+              <div
+                onClick={() => setBulkMode('replace')}
+                className={`flex items-start gap-3 p-3 cursor-pointer transition border-t ${bulkMode === 'replace' ? 'bg-red-50 border-l-4 border-red-500' : 'hover:bg-gray-50'}`}
+              >
+                <input type="radio" checked={bulkMode === 'replace'} onChange={() => setBulkMode('replace')} className="mt-1" />
+                <div>
+                  <p className="text-sm font-semibold text-red-700">Replace All (Delete then Import) ⚠️ Destructive</p>
+                  <p className="text-xs text-gray-500">Deletes ALL existing subsidy records first, then imports the new list fresh.</p>
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -319,11 +373,20 @@ export default function SubsidyPage() {
                   {bulkText.split(/[\n,]+/).filter(v => v.trim()).length} vehicle(s) detected
                 </p>
               </div>
+              {bulkLog && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-800">
+                  ℹ️ {bulkLog}
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowBulk(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition">Cancel</button>
-              <button onClick={handleBulkImport} disabled={bulkSaving} className="px-5 py-2 rounded-lg bg-blue-900 text-white text-sm font-semibold hover:bg-blue-800 transition disabled:opacity-60">
-                {bulkSaving ? 'Importing...' : 'Import All'}
+              <button onClick={() => { setShowBulk(false); setBulkLog(null) }} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition">Cancel</button>
+              <button
+                onClick={handleBulkImport}
+                disabled={bulkSaving}
+                className={`px-5 py-2 rounded-lg text-white text-sm font-semibold transition disabled:opacity-60 ${bulkMode === 'replace' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-900 hover:bg-blue-800'}`}
+              >
+                {bulkSaving ? 'Importing...' : bulkMode === 'replace' ? '⚠️ Delete All & Import' : '✅ Smart Import'}
               </button>
             </div>
           </div>
