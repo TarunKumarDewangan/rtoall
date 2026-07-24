@@ -100,6 +100,23 @@ CREATE TABLE IF NOT EXISTS work_done_registry (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 8. Complaints (शिकायत निवारण)
+CREATE TABLE IF NOT EXISTS complaints (
+  id SERIAL PRIMARY KEY,
+  token_no VARCHAR(50),
+  complaint_date DATE,
+  department VARCHAR(255),
+  dept_head VARCHAR(255),
+  category TEXT,
+  description TEXT,
+  district VARCHAR(100),
+  login_user_id VARCHAR(100),
+  officer_level VARCHAR(20),
+  status VARCHAR(30) DEFAULT 'Feedback Pending',
+  mobile_no VARCHAR(20),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
 
@@ -112,6 +129,7 @@ CREATE POLICY "Allow all" ON modify_letters FOR ALL USING (true) WITH CHECK (tru
 CREATE POLICY "Allow all" ON notesheets FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON subsidy_entries FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON work_done_registry FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON complaints FOR ALL USING (true) WITH CHECK (true);
 
 -- Enable RLS on all tables
 ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
@@ -121,3 +139,4 @@ ALTER TABLE modify_letters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notesheets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subsidy_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE work_done_registry ENABLE ROW LEVEL SECURITY;
+ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;

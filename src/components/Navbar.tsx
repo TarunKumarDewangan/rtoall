@@ -7,6 +7,7 @@ const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/backlog', label: 'Backlog Entries' },
   { href: '/backlog-received', label: 'Backlog Received' },
+  { href: '/complaints', label: 'शिकायत' },
   { href: '/ghoshnapatra', label: 'घोषणापत्र' },
   { href: '/subsidy', label: 'Subsidy' },
   { href: '/work-done', label: 'Work Done' },
