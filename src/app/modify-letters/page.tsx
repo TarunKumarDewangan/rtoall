@@ -105,7 +105,7 @@ export default function ModifyLettersPage() {
                 <div key={letter.id} className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex flex-wrap items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-900 flex items-center justify-center">
-                      <span className="text-white text-sm font-bold">{i + 1}</span>
+                      <span className="text-white text-sm font-bold">{letters.findIndex(l => l.id === letter.id) + 1}</span>
                     </div>
                     <div>
                       <h3 className="text-sm font-semibold text-gray-900">{letter.letter_subject || 'Untitled Letter'}</h3>

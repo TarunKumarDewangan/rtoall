@@ -176,7 +176,7 @@ export default function BacklogReceivedPage() {
                   <tr><td colSpan={11} className="text-center py-10 text-gray-400">No records found</td></tr>
                 ) : filtered.map((entry: any, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-gray-500 text-xs">{i + 1}</td>
+                    <td className="px-3 py-2 text-gray-500 text-xs">{entries.findIndex(e => e.id === entry.id) + 1}</td>
                     <td className="px-3 py-2 text-xs">
                       <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium">{entry.transaction_type || '—'}</span>
                     </td>

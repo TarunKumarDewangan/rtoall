@@ -421,7 +421,7 @@ export default function ComplaintsPage() {
                   <tr><td colSpan={14} className="text-center py-10 text-gray-400">कोई परिणाम नहीं मिला</td></tr>
                 ) : filtered.map((entry, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-xs text-gray-500">{i + 1}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{entries.findIndex(e => e.id === entry.id) + 1}</td>
                     <td className="px-3 py-2 text-xs font-mono font-semibold text-blue-900 whitespace-nowrap">{entry.token_no}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.complaint_date) || '—'}</td>
                     <td className="px-3 py-2 text-xs max-w-[220px] truncate" title={entry.category}>{entry.category}</td>

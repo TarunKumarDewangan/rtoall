@@ -262,9 +262,10 @@ export default function SubsidyPage() {
                   <tr><td colSpan={11} className="text-center py-10 text-gray-400">No entries found</td></tr>
                 ) : filtered.map((entry: any, i) => {
                   const score = BOOL_FIELDS.filter(f => entry[f]).length
+                  const originalPos = entries.findIndex(e => e.id === entry.id) + 1
                   return (
                     <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-3 py-2 text-xs text-gray-500">{i + 1}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500">{originalPos}</td>
                       <td className="px-3 py-2 text-xs font-mono font-semibold text-blue-900">{entry.vehicle_no}</td>
                       <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.date_submitted || '—'}</td>
                       <td className="px-3 py-2 text-xs">{entry.entry_by || '—'}</td>

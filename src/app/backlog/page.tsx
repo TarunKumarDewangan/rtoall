@@ -366,6 +366,7 @@ export default function BacklogPage() {
                   <tr><td colSpan={22} className="text-center py-10 text-gray-400">No records found</td></tr>
                 ) : filtered.map((entry, i) => {
                   const isSelected = selected.has(entry.id!)
+                  const originalPos = entries.findIndex(e => e.id === entry.id) + 1
                   return (
                     <tr key={entry.id} className={isSelected ? 'bg-blue-50' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="px-3 py-2">
@@ -376,7 +377,7 @@ export default function BacklogPage() {
                           className="w-4 h-4 cursor-pointer"
                         />
                       </td>
-                      <td className="px-2 py-2 text-gray-500">{i + 1}</td>
+                      <td className="px-2 py-2 text-gray-500">{originalPos}</td>
                       <td className="px-2 py-2 whitespace-nowrap">{entry.received_date || '—'}</td>
                       <td className="px-2 py-2 font-mono font-semibold text-blue-900">{entry.vehicle_no}</td>
                       <td className="px-2 py-2 whitespace-nowrap">{entry.given_by}</td>
