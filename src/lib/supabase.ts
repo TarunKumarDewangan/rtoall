@@ -98,12 +98,15 @@ export type Complaint = {
   id?: number
   token_no: string
   complaint_date: string | null
+  resolved_date: string | null
   department: string
   dept_head: string
   category: string
   description: string
   district: string
   login_user_id: string
+  officer_name: string
+  officer_designation: string
   officer_level: string
   status: string
   mobile_no: string

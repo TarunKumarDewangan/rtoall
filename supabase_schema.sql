@@ -105,17 +105,25 @@ CREATE TABLE IF NOT EXISTS complaints (
   id SERIAL PRIMARY KEY,
   token_no VARCHAR(50),
   complaint_date DATE,
+  resolved_date DATE,
   department VARCHAR(255),
   dept_head VARCHAR(255),
   category TEXT,
   description TEXT,
   district VARCHAR(100),
   login_user_id VARCHAR(100),
+  officer_name VARCHAR(255),
+  officer_designation VARCHAR(255),
   officer_level VARCHAR(20),
-  status VARCHAR(30) DEFAULT 'Feedback Pending',
+  status VARCHAR(50) DEFAULT 'Feedback Pending',
   mobile_no VARCHAR(20),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- If the complaints table already exists from an earlier version, run these to add the new columns:
+-- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS resolved_date DATE;
+-- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS officer_name VARCHAR(255);
+-- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS officer_designation VARCHAR(255);
 
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;

@@ -7,28 +7,38 @@ import PinModal from '@/components/PinModal'
 const EMPTY_FORM = {
   token_no: '',
   complaint_date: '',
+  resolved_date: '',
   department: 'परिवहन विभाग',
   dept_head: 'कार्यालय, परिवहन आयुक्त (परिवहन विभाग)',
   category: '',
   description: '',
   district: 'धमतरी',
   login_user_id: '',
+  officer_name: '',
+  officer_designation: '',
   officer_level: '',
   status: 'Feedback Pending',
   mobile_no: '',
 }
 type FormType = typeof EMPTY_FORM
 
-const STATUS_OPTIONS = ['Feedback Pending', 'In Progress', 'Closed', 'Not Related']
+// Common status values across both the original export format (English) and
+// the newer portal export format (Hindi), offered as suggestions only —
+// status is free text since new exports can introduce new labels.
+const STATUS_SUGGESTIONS = [
+  'Feedback Pending', 'In Progress', 'Closed', 'Not Related',
+  'प्रक्रियाधीन', 'निराकृत (फीडबैक लम्बित)', 'निराकृत (पॉजिटिव फीडबैक)',
+]
 
+// Classifies by keyword since statuses arrive in either English or Hindi
+// depending on which export the data was bulk-imported from.
 function statusClasses(status: string) {
-  switch (status) {
-    case 'Feedback Pending': return 'text-amber-700 bg-amber-100'
-    case 'In Progress': return 'text-blue-700 bg-blue-100'
-    case 'Closed': return 'text-green-700 bg-green-100'
-    case 'Not Related': return 'text-gray-600 bg-gray-100'
-    default: return 'text-gray-600 bg-gray-100'
-  }
+  const s = status || ''
+  if (/निराकृत|Closed/i.test(s)) return 'text-green-700 bg-green-100'
+  if (/प्रक्रियाधीन|In Progress/i.test(s)) return 'text-blue-700 bg-blue-100'
+  if (/Not Related|असंबंधित/i.test(s)) return 'text-gray-600 bg-gray-100'
+  if (/Pending|लंबित|लम्बित/i.test(s)) return 'text-amber-700 bg-amber-100'
+  return 'text-gray-600 bg-gray-100'
 }
 
 // Converts "DD-MM-YYYY" -> "YYYY-MM-DD"; passes through already-ISO or empty values
@@ -155,12 +165,15 @@ export default function ComplaintsPage() {
     setForm({
       token_no: entry.token_no || '',
       complaint_date: entry.complaint_date || '',
+      resolved_date: entry.resolved_date || '',
       department: entry.department || '',
       dept_head: entry.dept_head || '',
       category: entry.category || '',
       description: entry.description || '',
       district: entry.district || '',
       login_user_id: entry.login_user_id || '',
+      officer_name: entry.officer_name || '',
+      officer_designation: entry.officer_designation || '',
       officer_level: entry.officer_level || '',
       status: entry.status || 'Feedback Pending',
       mobile_no: entry.mobile_no || '',
@@ -170,7 +183,7 @@ export default function ComplaintsPage() {
 
   async function handleSave() {
     setSaving(true)
-    const payload = { ...form, complaint_date: form.complaint_date || null }
+    const payload = { ...form, complaint_date: form.complaint_date || null, resolved_date: form.resolved_date || null }
     let error: any
     if (editEntry?.id) {
       ;({ error } = await supabase.from('complaints').update(payload).eq('id', editEntry.id))
@@ -202,9 +215,14 @@ export default function ComplaintsPage() {
     else { showMsg('success', 'सभी शिकायतें हटाई गईं।'); fetchEntries() }
   }
 
-  // Parses rows pasted from Excel/PHP export (tab-separated). Accepts an optional
-  // leading serial-number column: token, date, dept, deptHead, category, desc,
-  // district, loginId, level, status, mobile
+  // Parses rows pasted from Excel/portal export (tab-separated). Auto-detects
+  // which of two known layouts the pasted data uses (strips an optional
+  // leading serial-number column from either):
+  //  - Original report export (11 cols): token, date, dept, deptHead, category,
+  //    desc, district, loginId, level, status, mobile
+  //  - Newer portal export (13 cols): dept, deptHead, district, token, date,
+  //    resolvedDate, category, desc, loginId, officerName, officerDesignation,
+  //    level, status
   function parseBulkRows(text: string) {
     return text
       .split(/\r?\n/)
@@ -214,9 +232,27 @@ export default function ComplaintsPage() {
         let cols = line.split('\t')
         if (cols.length === 1) cols = line.split(',') // fallback for comma-separated paste
         if (cols.length >= 12 && /^\d+$/.test(cols[0].trim())) cols = cols.slice(1)
-        if (cols.length < 11) return null
-        const [token_no, complaint_date, department, dept_head, category, description, district, login_user_id, officer_level, status, mobile_no] = cols.map(c => c.trim())
-        return { token_no, complaint_date: toISODate(complaint_date), department, dept_head, category, description, district, login_user_id, officer_level, status: status || 'Feedback Pending', mobile_no }
+        cols = cols.map(c => c.trim())
+
+        if (cols.length >= 13) {
+          const [department, dept_head, district, token_no, complaint_date, resolved_date, category, description, login_user_id, officer_name, officer_designation, officer_level, status] = cols
+          if (!token_no) return null
+          return {
+            token_no, complaint_date: toISODate(complaint_date), resolved_date: toISODate(resolved_date),
+            department, dept_head, category, description, district, login_user_id,
+            officer_name, officer_designation, officer_level, status: status || 'Feedback Pending', mobile_no: '',
+          }
+        }
+        if (cols.length >= 11) {
+          const [token_no, complaint_date, department, dept_head, category, description, district, login_user_id, officer_level, status, mobile_no] = cols
+          if (!token_no) return null
+          return {
+            token_no, complaint_date: toISODate(complaint_date), resolved_date: null,
+            department, dept_head, category, description, district, login_user_id,
+            officer_name: '', officer_designation: '', officer_level, status: status || 'Feedback Pending', mobile_no,
+          }
+        }
+        return null
       })
       .filter((r): r is NonNullable<typeof r> => !!r && !!r.token_no)
   }
@@ -262,8 +298,9 @@ export default function ComplaintsPage() {
 
   function openReportView() {
     const rows = filtered.map((e, i) => [
-      String(i + 1), e.token_no, fromISODate(e.complaint_date), e.department, e.dept_head,
-      e.category, e.description, e.district, e.login_user_id, e.officer_level, e.status, e.mobile_no,
+      String(i + 1), e.token_no, fromISODate(e.complaint_date), fromISODate(e.resolved_date), e.department, e.dept_head,
+      e.category, e.description, e.district, e.login_user_id, e.officer_name, e.officer_designation,
+      e.officer_level, e.status, e.mobile_no,
     ])
     const html = buildReportHTML(rows)
     const w = window.open('', '_blank')
@@ -300,12 +337,12 @@ export default function ComplaintsPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
           <div className="bg-white border border-gray-200 rounded-xl px-3 py-3 text-center">
             <div className="text-xl font-bold text-blue-900">{entries.length}</div>
             <div className="text-[11px] text-gray-500 mt-0.5">कुल शिकायतें</div>
           </div>
-          {STATUS_OPTIONS.map(s => (
+          {statusList.map(s => (
             <div key={s} className="bg-white border border-gray-200 rounded-xl px-3 py-3 text-center">
               <div className="text-xl font-bold text-blue-900">{stats[s] || 0}</div>
               <div className="text-[11px] text-gray-500 mt-0.5">{s}</div>
@@ -343,8 +380,8 @@ export default function ComplaintsPage() {
                 <tr className="bg-blue-900 text-white">
                   {[
                     ['#', null], ['टोकन नंबर', 'token_no'], ['दिनांक', 'complaint_date'], ['श्रेणी', 'category'],
-                    ['विवरण', null], ['जिला', 'district'], ['लॉगिन आईडी', 'login_user_id'], ['स्तर', 'officer_level'],
-                    ['स्थिति', 'status'], ['मोबाइल', 'mobile_no'], ['Actions', null],
+                    ['विवरण', null], ['जिला', 'district'], ['लॉगिन आईडी', 'login_user_id'], ['अधिकारी', 'officer_name'],
+                    ['स्तर', 'officer_level'], ['स्थिति', 'status'], ['निराकरण दिनांक', 'resolved_date'], ['मोबाइल', 'mobile_no'], ['Actions', null],
                   ].map(([label, key]) => (
                     <th
                       key={label as string}
@@ -358,7 +395,7 @@ export default function ComplaintsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={11} className="text-center py-10 text-gray-400">कोई परिणाम नहीं मिला</td></tr>
+                  <tr><td colSpan={12} className="text-center py-10 text-gray-400">कोई परिणाम नहीं मिला</td></tr>
                 ) : filtered.map((entry, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{i + 1}</td>
@@ -368,11 +405,15 @@ export default function ComplaintsPage() {
                     <td className="px-3 py-2 text-xs max-w-[320px] whitespace-pre-line">{entry.description}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.district}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.login_user_id || '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">
+                      {entry.officer_name ? <>{entry.officer_name}<br /><span className="text-gray-400">{entry.officer_designation}</span></> : '—'}
+                    </td>
                     <td className="px-3 py-2 text-xs text-center whitespace-nowrap">{entry.officer_level}</td>
                     <td className="px-3 py-2 text-xs">
                       <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${statusClasses(entry.status)}`}>{entry.status}</span>
                     </td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.mobile_no}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.resolved_date) || '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.mobile_no || '—'}</td>
                     <td className="px-3 py-2 text-xs">
                       <div className="flex gap-1">
                         <button onClick={() => requestEdit(entry)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
@@ -406,10 +447,11 @@ export default function ComplaintsPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">स्थिति</label>
-                  <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
-                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  <input list="status-suggestions" type="text" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                  <datalist id="status-suggestions">
+                    {STATUS_SUGGESTIONS.map(s => <option key={s} value={s} />)}
+                  </datalist>
                 </div>
               </div>
 
@@ -460,6 +502,24 @@ export default function ComplaintsPage() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">अधिकारी नाम</label>
+                  <input type="text" value={form.officer_name} onChange={e => setForm(f => ({ ...f, officer_name: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">अधिकारी पदनाम</label>
+                  <input type="text" value={form.officer_designation} onChange={e => setForm(f => ({ ...f, officer_designation: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">निराकरण दिनांक (मेंड दिनांक)</label>
+                  <input type="date" value={form.resolved_date} onChange={e => setForm(f => ({ ...f, resolved_date: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
@@ -478,7 +538,9 @@ export default function ComplaintsPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6">
             <h2 className="text-lg font-bold text-blue-900 mb-2">Bulk Import Complaints</h2>
             <p className="text-sm text-gray-500 mb-4">
-              Excel से पंक्तियाँ कॉपी-पेस्ट करें (Tab-separated): टोकन, दिनांक, विभाग, विभागाध्यक्ष, श्रेणी, विवरण, जिला, लॉगिन आईडी, स्तर, स्थिति, मोबाइल — क्रमांक कॉलम अपने आप हट जाएगा।
+              Excel से पंक्तियाँ कॉपी-पेस्ट करें (Tab-separated) — दोनों फॉर्मेट अपने आप पहचाने जाते हैं, क्रमांक कॉलम अपने आप हट जाएगा:
+              <br />• पुराना फॉर्मेट: टोकन, दिनांक, विभाग, विभागाध्यक्ष, श्रेणी, विवरण, जिला, लॉगिन आईडी, स्तर, स्थिति, मोबाइल
+              <br />• नया फॉर्मेट: विभाग, विभागाध्यक्ष, जिला, टोकन, दिनांक, मेंड दिनांक, श्रेणी, विवरण, लॉगिन आईडी, अधिकारी नाम, अधिकारी पदनाम, स्तर, स्थिति
             </p>
 
             <div className="mb-4 rounded-lg border border-gray-200 overflow-hidden">
@@ -597,7 +659,7 @@ function buildReportHTML(rows: string[][]): string {
   header.title-block{text-align:center;margin-bottom:16px;}
   header.title-block h1{margin:0 0 4px;font-size:21px;color:var(--accent-dark);}
   header.title-block .sub{color:var(--muted);font-size:13px;}
-  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:16px 0 18px;max-width:1100px;margin-left:auto;margin-right:auto;}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:16px 0 18px;max-width:1300px;margin-left:auto;margin-right:auto;}
   .stat-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 8px;text-align:center;}
   .stat-card .n{font-size:20px;font-weight:700;color:var(--accent-dark);}
   .stat-card .l{font-size:11.5px;color:var(--muted);margin-top:2px;}
@@ -629,6 +691,7 @@ function buildReportHTML(rows: string[][]): string {
     .status-badge{-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1px solid currentColor;}
     td.col-desc{max-width:220px;}
   }
+  @media print{ .stats{grid-template-columns:repeat(auto-fit,minmax(100px,1fr));} }
   @page{size:A3 landscape;margin:10mm;}
 </style>
 </head>
@@ -646,20 +709,20 @@ function buildReportHTML(rows: string[][]): string {
   <footer>Total <span id="footTotal"></span> records</footer>
 </div>
 <script>
-const HEADERS = ["क्रमांक","टोकन नंबर","शिकायत दिनांक","विभाग","विभागाध्यक्ष","शिकायत श्रेणी","शिकायत विवरण","जिला","लॉगिन यूज़र आईडी","अधिकारी स्तर","स्थिति","नागरिक मोबाइल"];
+const HEADERS = ["क्रमांक","टोकन नंबर","शिकायत दिनांक","निराकरण दिनांक","विभाग","विभागाध्यक्ष","शिकायत श्रेणी","शिकायत विवरण","जिला","लॉगिन यूज़र आईडी","अधिकारी नाम","अधिकारी पदनाम","अधिकारी स्तर","स्थिति","नागरिक मोबाइल"];
 const ROWS = ${rowsJson};
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
 function statusClass(s){return "status-"+(s||"Unknown").replace(/\\s+/g,'-');}
 document.getElementById('headRow').innerHTML = HEADERS.map(h=>'<th>'+esc(h)+'</th>').join('');
 document.getElementById('tbody').innerHTML = ROWS.map(r=>
-  '<tr><td class="col-idx">'+esc(r[0])+'</td><td class="col-token">'+esc(r[1])+'</td><td class="col-date">'+esc(r[2])+'</td>'+
-  '<td>'+esc(r[3])+'</td><td>'+esc(r[4])+'</td><td>'+esc(r[5])+'</td><td class="col-desc">'+esc(r[6])+'</td>'+
-  '<td>'+esc(r[7])+'</td><td>'+esc(r[8]||'—')+'</td><td class="col-level">'+esc(r[9])+'</td>'+
-  '<td><span class="status-badge '+statusClass(r[10])+'">'+esc(r[10]||'Unknown')+'</span></td><td class="col-mobile">'+esc(r[11])+'</td></tr>'
+  '<tr><td class="col-idx">'+esc(r[0])+'</td><td class="col-token">'+esc(r[1])+'</td><td class="col-date">'+esc(r[2])+'</td><td class="col-date">'+esc(r[3]||'—')+'</td>'+
+  '<td>'+esc(r[4])+'</td><td>'+esc(r[5])+'</td><td>'+esc(r[6])+'</td><td class="col-desc">'+esc(r[7])+'</td>'+
+  '<td>'+esc(r[8])+'</td><td>'+esc(r[9]||'—')+'</td><td>'+esc(r[10]||'—')+'</td><td>'+esc(r[11]||'—')+'</td><td class="col-level">'+esc(r[12])+'</td>'+
+  '<td><span class="status-badge '+statusClass(r[13])+'">'+esc(r[13]||'Unknown')+'</span></td><td class="col-mobile">'+esc(r[14]||'—')+'</td></tr>'
 ).join('');
 const counts = {};
-ROWS.forEach(r=>{const s=r[10]||'Unknown';counts[s]=(counts[s]||0)+1;});
-const order=['Feedback Pending','In Progress','Closed','Not Related'];
+ROWS.forEach(r=>{const s=r[13]||'Unknown';counts[s]=(counts[s]||0)+1;});
+const order=Object.keys(counts);
 let sh='<div class="stat-card"><div class="n">'+ROWS.length+'</div><div class="l">कुल शिकायतें</div></div>';
 order.forEach(s=>{sh+='<div class="stat-card"><div class="n">'+(counts[s]||0)+'</div><div class="l">'+s+'</div></div>';});
 document.getElementById('statsRow').innerHTML = sh;
