@@ -26,8 +26,12 @@ CREATE TABLE IF NOT EXISTS backlog_entries (
   letter_sending_date DATE,
   letter_status VARCHAR(100) DEFAULT 'Pending',
   print_lot VARCHAR(50),
+  file_link TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- If backlog_entries already exists from an earlier version, run this to add the new column:
+-- ALTER TABLE backlog_entries ADD COLUMN IF NOT EXISTS file_link TEXT;
 
 -- 2. Backlog Received (file/document transaction tracking)
 CREATE TABLE IF NOT EXISTS backlog_received (

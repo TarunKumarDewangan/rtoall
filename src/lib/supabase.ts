@@ -26,6 +26,7 @@ export type BacklogEntry = {
   letter_sending_date: string | null
   letter_status: string
   print_lot: string
+  file_link: string
   created_at?: string
 }
 

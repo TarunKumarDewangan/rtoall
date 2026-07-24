@@ -37,6 +37,7 @@ const EMPTY_FORM: Omit<BacklogEntry, 'id' | 'created_at'> = {
   letter_sending_date: '',
   letter_status: 'Pending',
   print_lot: '',
+  file_link: '',
 }
 
 export default function BacklogPage() {
@@ -355,14 +356,14 @@ export default function BacklogPage() {
                       title="Select All"
                     />
                   </th>
-                  {['#', 'Date', 'Vehicle No', 'Given By', 'Mobile', 'Chassis', 'Engine', 'F22', 'F21', 'INV', 'RC', '1stINC', 'Work Needed', 'Remarks', 'Letter No', 'Letter Date', 'Send Date', 'Status', 'Print Lot', 'Actions'].map(h => (
+                  {['#', 'Date', 'Vehicle No', 'Given By', 'Mobile', 'Chassis', 'Engine', 'F22', 'F21', 'INV', 'RC', '1stINC', 'Work Needed', 'Remarks', 'Letter No', 'Letter Date', 'Send Date', 'Status', 'Print Lot', 'File', 'Actions'].map(h => (
                     <th key={h} className="px-2 py-3 text-left font-semibold whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={21} className="text-center py-10 text-gray-400">No records found</td></tr>
+                  <tr><td colSpan={22} className="text-center py-10 text-gray-400">No records found</td></tr>
                 ) : filtered.map((entry, i) => {
                   const isSelected = selected.has(entry.id!)
                   return (
@@ -398,6 +399,14 @@ export default function BacklogPage() {
                         </span>
                       </td>
                       <td className="px-2 py-2">{entry.print_lot}</td>
+                      <td className="px-2 py-2">
+                        {entry.file_link ? (
+                          <a href={entry.file_link} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-sky-100 text-sky-700 hover:bg-sky-200 text-xs font-medium">
+                            📎 Open
+                          </a>
+                        ) : '—'}
+                      </td>
                       <td className="px-2 py-2">
                         <div className="flex gap-1">
                           <button onClick={() => requestEdit(entry)} className="px-2 py-1 rounded bg-yellow-100 text-yellow-800 hover:bg-yellow-200 text-xs font-medium">Edit</button>
@@ -483,6 +492,14 @@ export default function BacklogPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
                   {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
                 </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">फ़ाइल लिंक (Telegram)</label>
+                <input type="url" value={form.file_link} onChange={e => setForm(f => ({ ...f, file_link: e.target.value }))}
+                  placeholder="https://t.me/c/..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                <p className="text-xs text-gray-400 mt-1">Telegram में फ़ाइल/मैसेज पर राइट-क्लिक (या लॉन्ग-प्रेस) करें → "Copy Message Link" → यहाँ पेस्ट करें।</p>
               </div>
             </div>
 
