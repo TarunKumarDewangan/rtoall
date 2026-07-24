@@ -277,7 +277,7 @@ export default function BacklogPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-screen-2xl mx-auto px-4 py-6">
+      <div className="w-full px-4 py-6">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
