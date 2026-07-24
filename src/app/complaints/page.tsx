@@ -67,6 +67,8 @@ export default function ComplaintsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [levelFilter, setLevelFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('complaint_date')
   const [sortAsc, setSortAsc] = useState(false)
 
@@ -122,6 +124,8 @@ export default function ComplaintsPage() {
     let rows = entries.filter(e => {
       if (statusFilter && e.status !== statusFilter) return false
       if (levelFilter && e.officer_level !== levelFilter) return false
+      if (dateFrom && (!e.complaint_date || e.complaint_date < dateFrom)) return false
+      if (dateTo && (!e.complaint_date || e.complaint_date > dateTo)) return false
       if (search.trim()) {
         const q = search.trim().toLowerCase()
         const hay = Object.values(e).join(' ').toLowerCase()
@@ -138,7 +142,7 @@ export default function ComplaintsPage() {
       })
     }
     return rows
-  }, [entries, search, statusFilter, levelFilter, sortKey, sortAsc])
+  }, [entries, search, statusFilter, levelFilter, dateFrom, dateTo, sortKey, sortAsc])
 
   function toggleSort(key: keyof FormType) {
     if (sortKey === key) setSortAsc(!sortAsc)
@@ -388,8 +392,26 @@ export default function ComplaintsPage() {
             <option value="">सभी अधिकारी स्तर</option>
             {levelList.map(l => <option key={l} value={l}>{l}</option>)}
           </select>
-          {(search || statusFilter || levelFilter) && (
-            <button onClick={() => { setSearch(''); setStatusFilter(''); setLevelFilter('') }} className="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Reset</button>
+          <div className="flex items-center gap-1.5 border border-gray-300 rounded-lg px-2 py-1 bg-white">
+            <span className="text-xs text-gray-500 whitespace-nowrap">दिनांक से</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={e => setDateFrom(e.target.value)}
+              className="text-sm focus:outline-none"
+            />
+          </div>
+          <div className="flex items-center gap-1.5 border border-gray-300 rounded-lg px-2 py-1 bg-white">
+            <span className="text-xs text-gray-500 whitespace-nowrap">तक</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={e => setDateTo(e.target.value)}
+              className="text-sm focus:outline-none"
+            />
+          </div>
+          {(search || statusFilter || levelFilter || dateFrom || dateTo) && (
+            <button onClick={() => { setSearch(''); setStatusFilter(''); setLevelFilter(''); setDateFrom(''); setDateTo('') }} className="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Reset</button>
           )}
         </div>
 
