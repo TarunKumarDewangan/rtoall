@@ -1,6 +1,8 @@
 'use client'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import PinModal from '@/components/PinModal'
 
 type TableName =
   | 'backlog_entries'
@@ -77,6 +79,8 @@ function transformRecord(table: TableName, record: Record<string, unknown>): Rec
 }
 
 export default function ImportPage() {
+  const router = useRouter()
+  const [unlocked, setUnlocked] = useState(false)
   const [selectedTable, setSelectedTable] = useState<TableName>('backlog_entries')
   const [jsonText, setJsonText] = useState('')
   const [status, setStatus] = useState<'idle' | 'processing' | 'done' | 'error'>('idle')
@@ -188,6 +192,18 @@ export default function ImportPage() {
       setJsonText(ev.target?.result as string)
     }
     reader.readAsText(file)
+  }
+
+  if (!unlocked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <PinModal
+          action="open Import Data"
+          onSuccess={() => setUnlocked(true)}
+          onCancel={() => router.push('/')}
+        />
+      </div>
+    )
   }
 
   return (
