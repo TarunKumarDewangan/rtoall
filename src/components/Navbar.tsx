@@ -1,24 +1,58 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-const navLinks = [
+type NavLink = { href: string; label: string }
+type NavItem = NavLink | { label: string; children: NavLink[] }
+
+const navItems: NavItem[] = [
   { href: '/', label: 'Home' },
-  { href: '/backlog', label: 'Backlog Entries' },
-  { href: '/backlog-received', label: 'Backlog Received' },
+  {
+    label: 'Backlog',
+    children: [
+      { href: '/backlog', label: 'Backlog Entries' },
+      { href: '/ghoshnapatra', label: 'घोषणापत्र' },
+    ],
+  },
+  { href: '/backlog-received', label: 'File IN/Out' },
   { href: '/complaints', label: 'शिकायत' },
-  { href: '/ghoshnapatra', label: 'घोषणापत्र' },
   { href: '/subsidy', label: 'Subsidy' },
-  { href: '/work-done', label: 'Work Done' },
-  { href: '/notesheets', label: 'Notesheets' },
-  { href: '/modify-letters', label: 'Modify Letters' },
+  {
+    label: 'OfficeOW',
+    children: [
+      { href: '/work-done', label: 'Work Done' },
+      { href: '/notesheets', label: 'Notesheets' },
+      { href: '/modify-letters', label: 'Modify Letters' },
+    ],
+  },
   { href: '/import', label: '📥 Import Data' },
 ]
+
+function isGroup(item: NavItem): item is { label: string; children: NavLink[] } {
+  return 'children' in item
+}
 
 export default function Navbar() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const [mobileGroupOpen, setMobileGroupOpen] = useState<string | null>(null)
+  const [desktopGroupOpen, setDesktopGroupOpen] = useState<string | null>(null)
+  const navRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) {
+        setDesktopGroupOpen(null)
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [])
+
+  function groupIsActive(children: NavLink[]) {
+    return children.some(c => c.href === pathname)
+  }
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-blue-900 text-white shadow-lg no-print">
@@ -29,20 +63,53 @@ export default function Navbar() {
         </Link>
 
         {/* Desktop nav */}
-        <div className="hidden lg:flex items-center gap-1">
-          {navLinks.map(link => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={`px-3 py-1.5 rounded text-sm transition-colors ${
-                pathname === link.href
-                  ? 'bg-blue-700 font-semibold'
-                  : 'hover:bg-blue-800'
-              }`}
-            >
-              {link.label}
-            </Link>
-          ))}
+        <div ref={navRef} className="hidden lg:flex items-center gap-1">
+          {navItems.map(item => {
+            if (isGroup(item)) {
+              const active = groupIsActive(item.children)
+              const isOpen = desktopGroupOpen === item.label
+              return (
+                <div key={item.label} className="relative">
+                  <button
+                    onClick={() => setDesktopGroupOpen(isOpen ? null : item.label)}
+                    className={`px-3 py-1.5 rounded text-sm transition-colors flex items-center gap-1 ${
+                      active ? 'bg-blue-700 font-semibold' : 'hover:bg-blue-800'
+                    }`}
+                  >
+                    {item.label}
+                    <span className={`text-[10px] transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+                  </button>
+                  {isOpen && (
+                    <div className="absolute left-0 top-full mt-1 min-w-[180px] bg-blue-900 border border-blue-700 rounded-lg shadow-xl overflow-hidden">
+                      {item.children.map(child => (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={() => setDesktopGroupOpen(null)}
+                          className={`block px-4 py-2.5 text-sm transition-colors ${
+                            pathname === child.href ? 'bg-blue-700 font-semibold' : 'hover:bg-blue-800'
+                          }`}
+                        >
+                          {child.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`px-3 py-1.5 rounded text-sm transition-colors ${
+                  pathname === item.href ? 'bg-blue-700 font-semibold' : 'hover:bg-blue-800'
+                }`}
+              >
+                {item.label}
+              </Link>
+            )
+          })}
         </div>
 
         {/* Mobile hamburger */}
@@ -59,18 +126,53 @@ export default function Navbar() {
       {/* Mobile menu */}
       {open && (
         <div className="lg:hidden bg-blue-950 border-t border-blue-800">
-          {navLinks.map(link => (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={() => setOpen(false)}
-              className={`block px-4 py-3 text-sm border-b border-blue-800 transition-colors ${
-                pathname === link.href ? 'bg-blue-800 font-semibold' : 'hover:bg-blue-900'
-              }`}
-            >
-              {link.label}
-            </Link>
-          ))}
+          {navItems.map(item => {
+            if (isGroup(item)) {
+              const active = groupIsActive(item.children)
+              const isOpen = mobileGroupOpen === item.label
+              return (
+                <div key={item.label} className="border-b border-blue-800">
+                  <button
+                    onClick={() => setMobileGroupOpen(isOpen ? null : item.label)}
+                    className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors ${
+                      active ? 'bg-blue-800 font-semibold' : 'hover:bg-blue-900'
+                    }`}
+                  >
+                    {item.label}
+                    <span className={`text-[10px] transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+                  </button>
+                  {isOpen && (
+                    <div className="bg-blue-900">
+                      {item.children.map(child => (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={() => { setOpen(false); setMobileGroupOpen(null) }}
+                          className={`block pl-8 pr-4 py-3 text-sm border-t border-blue-800 transition-colors ${
+                            pathname === child.href ? 'bg-blue-800 font-semibold' : 'hover:bg-blue-800'
+                          }`}
+                        >
+                          {child.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setOpen(false)}
+                className={`block px-4 py-3 text-sm border-b border-blue-800 transition-colors ${
+                  pathname === item.href ? 'bg-blue-800 font-semibold' : 'hover:bg-blue-900'
+                }`}
+              >
+                {item.label}
+              </Link>
+            )
+          })}
         </div>
       )}
     </nav>
