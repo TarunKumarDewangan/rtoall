@@ -110,5 +110,7 @@ export type Complaint = {
   officer_level: string
   status: string
   mobile_no: string
+  remarks: string
+  file_link: string
   created_at?: string
 }

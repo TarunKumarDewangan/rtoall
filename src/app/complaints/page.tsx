@@ -19,6 +19,8 @@ const EMPTY_FORM = {
   officer_level: '',
   status: 'Feedback Pending',
   mobile_no: '',
+  remarks: '',
+  file_link: '',
 }
 type FormType = typeof EMPTY_FORM
 
@@ -177,6 +179,8 @@ export default function ComplaintsPage() {
       officer_level: entry.officer_level || '',
       status: entry.status || 'Feedback Pending',
       mobile_no: entry.mobile_no || '',
+      remarks: entry.remarks || '',
+      file_link: entry.file_link || '',
     })
     setShowForm(true)
   }
@@ -399,7 +403,8 @@ export default function ComplaintsPage() {
                   {[
                     ['#', null], ['टोकन नंबर', 'token_no'], ['दिनांक', 'complaint_date'], ['श्रेणी', 'category'],
                     ['विवरण', null], ['जिला', 'district'], ['लॉगिन आईडी', 'login_user_id'], ['अधिकारी', 'officer_name'],
-                    ['स्तर', 'officer_level'], ['स्थिति', 'status'], ['निराकरण दिनांक', 'resolved_date'], ['मोबाइल', 'mobile_no'], ['Actions', null],
+                    ['स्तर', 'officer_level'], ['स्थिति', 'status'], ['निराकरण दिनांक', 'resolved_date'], ['मोबाइल', 'mobile_no'],
+                    ['टिप्पणी (Remarks)', null], ['फ़ाइल', null], ['Actions', null],
                   ].map(([label, key]) => (
                     <th
                       key={label as string}
@@ -413,7 +418,7 @@ export default function ComplaintsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={12} className="text-center py-10 text-gray-400">कोई परिणाम नहीं मिला</td></tr>
+                  <tr><td colSpan={14} className="text-center py-10 text-gray-400">कोई परिणाम नहीं मिला</td></tr>
                 ) : filtered.map((entry, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{i + 1}</td>
@@ -432,6 +437,15 @@ export default function ComplaintsPage() {
                     </td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.resolved_date) || '—'}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.mobile_no || '—'}</td>
+                    <td className="px-3 py-2 text-xs max-w-[220px] whitespace-pre-line">{entry.remarks || '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">
+                      {entry.file_link ? (
+                        <a href={entry.file_link} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-sky-100 text-sky-700 hover:bg-sky-200 text-xs font-medium">
+                          📎 Open
+                        </a>
+                      ) : '—'}
+                    </td>
                     <td className="px-3 py-2 text-xs">
                       <div className="flex gap-1">
                         <button onClick={() => requestEdit(entry)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
@@ -537,6 +551,20 @@ export default function ComplaintsPage() {
                   <input type="date" value={form.resolved_date} onChange={e => setForm(f => ({ ...f, resolved_date: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">टिप्पणी (Remarks)</label>
+                <textarea value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">फ़ाइल लिंक (Telegram)</label>
+                <input type="url" value={form.file_link} onChange={e => setForm(f => ({ ...f, file_link: e.target.value }))}
+                  placeholder="https://t.me/c/..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                <p className="text-xs text-gray-400 mt-1">Telegram में फ़ाइल/मैसेज पर राइट-क्लिक (या लॉन्ग-प्रेस) करें → "Copy Message Link" → यहाँ पेस्ट करें।</p>
               </div>
             </div>
 

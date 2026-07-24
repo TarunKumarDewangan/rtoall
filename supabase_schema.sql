@@ -117,6 +117,8 @@ CREATE TABLE IF NOT EXISTS complaints (
   officer_level VARCHAR(20),
   status VARCHAR(50) DEFAULT 'Feedback Pending',
   mobile_no VARCHAR(20),
+  remarks TEXT,
+  file_link TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -124,6 +126,8 @@ CREATE TABLE IF NOT EXISTS complaints (
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS resolved_date DATE;
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS officer_name VARCHAR(255);
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS officer_designation VARCHAR(255);
+-- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS remarks TEXT;
+-- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS file_link TEXT;
 
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
