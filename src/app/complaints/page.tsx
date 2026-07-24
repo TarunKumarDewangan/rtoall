@@ -309,7 +309,7 @@ export default function ComplaintsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-screen-xl mx-auto px-4 py-6">
+      <div className="w-full px-4 py-6">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-blue-900">शिकायत निवारण (Complaints)</h1>
@@ -401,8 +401,8 @@ export default function ComplaintsPage() {
                     <td className="px-3 py-2 text-xs text-gray-500">{i + 1}</td>
                     <td className="px-3 py-2 text-xs font-mono font-semibold text-blue-900 whitespace-nowrap">{entry.token_no}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.complaint_date) || '—'}</td>
-                    <td className="px-3 py-2 text-xs max-w-[160px] truncate" title={entry.category}>{entry.category}</td>
-                    <td className="px-3 py-2 text-xs max-w-[320px] whitespace-pre-line">{entry.description}</td>
+                    <td className="px-3 py-2 text-xs max-w-[220px] truncate" title={entry.category}>{entry.category}</td>
+                    <td className="px-3 py-2 text-xs max-w-[520px] whitespace-pre-line">{entry.description}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.district}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.login_user_id || '—'}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">
