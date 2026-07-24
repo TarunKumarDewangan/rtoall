@@ -215,6 +215,25 @@ export default function ComplaintsPage() {
     else { showMsg('success', 'सभी शिकायतें हटाई गईं।'); fetchEntries() }
   }
 
+  // Excel/portal exports often contain a literal line-break inside the
+  // description cell. Pasted as tab-separated text that turns one logical
+  // row into several physical lines, which breaks naive newline-splitting.
+  // A genuine row start has a token number (e.g. CC260700096707) in one of
+  // its first few tab-separated fields; any line without one is a
+  // continuation of the previous row's multi-line cell and gets re-joined.
+  const TOKEN_RE = /^[A-Za-z]{1,4}\d{6,}$/
+  function mergeBulkLines(text: string): string[] {
+    const rawLines = text.split(/\r?\n/).filter(l => l.trim() !== '')
+    const merged: string[] = []
+    for (const line of rawLines) {
+      const cols = line.split('\t')
+      const isNewRow = merged.length === 0 || cols.slice(0, 6).some(c => TOKEN_RE.test(c.trim()))
+      if (isNewRow) merged.push(line)
+      else merged[merged.length - 1] += '\n' + line
+    }
+    return merged
+  }
+
   // Parses rows pasted from Excel/portal export (tab-separated). Auto-detects
   // which of two known layouts the pasted data uses (strips an optional
   // leading serial-number column from either):
@@ -224,8 +243,7 @@ export default function ComplaintsPage() {
   //    resolvedDate, category, desc, loginId, officerName, officerDesignation,
   //    level, status
   function parseBulkRows(text: string) {
-    return text
-      .split(/\r?\n/)
+    return mergeBulkLines(text)
       .map(l => l.trim())
       .filter(Boolean)
       .map(line => {
