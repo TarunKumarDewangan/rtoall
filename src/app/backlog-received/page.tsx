@@ -178,7 +178,9 @@ export default function BacklogReceivedPage() {
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-gray-500 text-xs">{entries.findIndex(e => e.id === entry.id) + 1}</td>
                     <td className="px-3 py-2 text-xs">
-                      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium">{entry.transaction_type || '—'}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${entry.transaction_type === 'incoming' ? 'bg-green-100 text-green-800' : entry.transaction_type === 'outgoing' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
+                        {entry.transaction_type || '—'}
+                      </span>
                     </td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.received_date || '—'}</td>
                     <td className="px-3 py-2 text-xs">{entry.given_by || '—'}</td>
@@ -211,7 +213,32 @@ export default function BacklogReceivedPage() {
               {fields.map(({ label, key, type }) => (
                 <div key={key} className={key === 'remarks' || key === 'work_needed' ? 'sm:col-span-2' : ''}>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
-                  {key === 'remarks' || key === 'work_needed' ? (
+                  {key === 'transaction_type' ? (
+                    <div className="flex gap-2">
+                      {(['incoming', 'outgoing'] as const).map(opt => (
+                        <label
+                          key={opt}
+                          className={`flex-1 flex items-center justify-center gap-1.5 cursor-pointer rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                            form.transaction_type === opt
+                              ? opt === 'incoming'
+                                ? 'bg-green-100 border-green-400 text-green-800'
+                                : 'bg-blue-100 border-blue-400 text-blue-800'
+                              : 'border-gray-300 text-gray-500 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="transaction_type"
+                            value={opt}
+                            checked={form.transaction_type === opt}
+                            onChange={e => setForm(f => ({ ...f, transaction_type: e.target.value }))}
+                            className="sr-only"
+                          />
+                          {opt === 'incoming' ? '📥 Incoming' : '📤 Outgoing'}
+                        </label>
+                      ))}
+                    </div>
+                  ) : key === 'remarks' || key === 'work_needed' ? (
                     <textarea
                       value={form[key]}
                       onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
