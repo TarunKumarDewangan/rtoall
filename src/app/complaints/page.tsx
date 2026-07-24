@@ -322,7 +322,7 @@ export default function ComplaintsPage() {
     const rows = filtered.map((e, i) => [
       String(i + 1), e.token_no, fromISODate(e.complaint_date), fromISODate(e.resolved_date), e.department, e.dept_head,
       e.category, e.description, e.district, e.login_user_id, e.officer_name, e.officer_designation,
-      e.officer_level, e.status, e.mobile_no,
+      e.officer_level, e.status, e.mobile_no, e.remarks,
     ])
     const html = buildReportHTML(rows)
     const w = window.open('', '_blank')
@@ -755,7 +755,7 @@ function buildReportHTML(rows: string[][]): string {
   <footer>Total <span id="footTotal"></span> records</footer>
 </div>
 <script>
-const HEADERS = ["क्रमांक","टोकन नंबर","शिकायत दिनांक","निराकरण दिनांक","विभाग","विभागाध्यक्ष","शिकायत श्रेणी","शिकायत विवरण","जिला","लॉगिन यूज़र आईडी","अधिकारी नाम","अधिकारी पदनाम","अधिकारी स्तर","स्थिति","नागरिक मोबाइल"];
+const HEADERS = ["क्रमांक","टोकन नंबर","शिकायत दिनांक","निराकरण दिनांक","विभाग","विभागाध्यक्ष","शिकायत श्रेणी","शिकायत विवरण","जिला","लॉगिन यूज़र आईडी","अधिकारी नाम","अधिकारी पदनाम","अधिकारी स्तर","स्थिति","नागरिक मोबाइल","टिप्पणी (Remarks)"];
 const ROWS = ${rowsJson};
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
 function statusClass(s){return "status-"+(s||"Unknown").replace(/\\s+/g,'-');}
@@ -764,7 +764,8 @@ document.getElementById('tbody').innerHTML = ROWS.map(r=>
   '<tr><td class="col-idx">'+esc(r[0])+'</td><td class="col-token">'+esc(r[1])+'</td><td class="col-date">'+esc(r[2])+'</td><td class="col-date">'+esc(r[3]||'—')+'</td>'+
   '<td>'+esc(r[4])+'</td><td>'+esc(r[5])+'</td><td>'+esc(r[6])+'</td><td class="col-desc">'+esc(r[7])+'</td>'+
   '<td>'+esc(r[8])+'</td><td>'+esc(r[9]||'—')+'</td><td>'+esc(r[10]||'—')+'</td><td>'+esc(r[11]||'—')+'</td><td class="col-level">'+esc(r[12])+'</td>'+
-  '<td><span class="status-badge '+statusClass(r[13])+'">'+esc(r[13]||'Unknown')+'</span></td><td class="col-mobile">'+esc(r[14]||'—')+'</td></tr>'
+  '<td><span class="status-badge '+statusClass(r[13])+'">'+esc(r[13]||'Unknown')+'</span></td><td class="col-mobile">'+esc(r[14]||'—')+'</td>'+
+  '<td class="col-desc">'+esc(r[15]||'—')+'</td></tr>'
 ).join('');
 const counts = {};
 ROWS.forEach(r=>{const s=r[13]||'Unknown';counts[s]=(counts[s]||0)+1;});
