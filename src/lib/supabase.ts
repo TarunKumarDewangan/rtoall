@@ -163,12 +163,17 @@ export type Complaint = {
 export type SubsidyStatus = {
   id?: number
   vehicle_no: string
-  applicant_name: string
-  vehicle_category: string
+  owner_name: string
+  mobile_no: string
+  category: string
+  ifsc: string
+  account_no: string
   amount: number | null
-  status: string
-  date_of_distribution: string | null
   letter_no: string
-  date_of_sending: string | null
+  application_date: string | null
+  transfer_date: string | null
+  status: string
+  registration_year: string
+  remarks: string
   created_at?: string
 }

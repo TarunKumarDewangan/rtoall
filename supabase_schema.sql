@@ -137,15 +137,33 @@ CREATE TABLE IF NOT EXISTS complaints (
 CREATE TABLE IF NOT EXISTS subsidy_status (
   id SERIAL PRIMARY KEY,
   vehicle_no VARCHAR(50),
-  applicant_name VARCHAR(255),
-  vehicle_category VARCHAR(100),
+  owner_name VARCHAR(255),
+  mobile_no VARCHAR(20),
+  category VARCHAR(100),
+  ifsc VARCHAR(20),
+  account_no VARCHAR(50),
   amount NUMERIC(12,2),
-  status VARCHAR(50) DEFAULT 'Pending',
-  date_of_distribution DATE,
   letter_no VARCHAR(100),
-  date_of_sending DATE,
+  application_date DATE,
+  transfer_date DATE,
+  status VARCHAR(50) DEFAULT 'NotSubmited',
+  registration_year VARCHAR(10),
+  remarks TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- If subsidy_status was already created with the earlier (v1) column set,
+-- migrate it to the new format instead of losing any test data:
+-- ALTER TABLE subsidy_status RENAME COLUMN applicant_name TO owner_name;
+-- ALTER TABLE subsidy_status RENAME COLUMN vehicle_category TO category;
+-- ALTER TABLE subsidy_status RENAME COLUMN date_of_distribution TO application_date;
+-- ALTER TABLE subsidy_status RENAME COLUMN date_of_sending TO transfer_date;
+-- ALTER TABLE subsidy_status ADD COLUMN IF NOT EXISTS mobile_no VARCHAR(20);
+-- ALTER TABLE subsidy_status ADD COLUMN IF NOT EXISTS ifsc VARCHAR(20);
+-- ALTER TABLE subsidy_status ADD COLUMN IF NOT EXISTS account_no VARCHAR(50);
+-- ALTER TABLE subsidy_status ADD COLUMN IF NOT EXISTS registration_year VARCHAR(10);
+-- ALTER TABLE subsidy_status ADD COLUMN IF NOT EXISTS remarks TEXT;
+
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
 

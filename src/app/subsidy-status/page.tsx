@@ -6,23 +6,30 @@ import PinModal from '@/components/PinModal'
 
 const EMPTY_FORM = {
   vehicle_no: '',
-  applicant_name: '',
-  vehicle_category: '',
+  owner_name: '',
+  mobile_no: '',
+  category: '',
+  ifsc: '',
+  account_no: '',
   amount: '',
-  status: 'Success',
-  date_of_distribution: '',
   letter_no: '',
-  date_of_sending: '',
+  application_date: '',
+  transfer_date: '',
+  status: 'NotSubmited',
+  registration_year: '',
+  remarks: '',
 }
 type FormType = typeof EMPTY_FORM
 
-const STATUS_SUGGESTIONS = ['Success', 'Pending', 'Rejected', 'In Process']
+const STATUS_OPTIONS = ['Success', 'Failed', 'Sent to Bank', 'ApplicationSubmitedRTO', 'NotSubmited']
 
 function statusClasses(status: string) {
   const s = status || ''
-  if (/success|approved|paid|disburs/i.test(s)) return 'text-green-700 bg-green-100'
-  if (/reject|fail/i.test(s)) return 'text-red-700 bg-red-100'
-  if (/pending|process/i.test(s)) return 'text-amber-700 bg-amber-100'
+  if (/success/i.test(s)) return 'text-green-700 bg-green-100'
+  if (/failed/i.test(s)) return 'text-red-700 bg-red-100'
+  if (/sent to bank/i.test(s)) return 'text-blue-700 bg-blue-100'
+  if (/applicationsubmitedrto|submitted.*rto/i.test(s)) return 'text-amber-700 bg-amber-100'
+  if (/notsubmited|not submitted/i.test(s)) return 'text-gray-600 bg-gray-100'
   return 'text-gray-600 bg-gray-100'
 }
 
@@ -127,13 +134,18 @@ export default function SubsidyStatusPage() {
     setEditEntry(entry)
     setForm({
       vehicle_no: entry.vehicle_no || '',
-      applicant_name: entry.applicant_name || '',
-      vehicle_category: entry.vehicle_category || '',
+      owner_name: entry.owner_name || '',
+      mobile_no: entry.mobile_no || '',
+      category: entry.category || '',
+      ifsc: entry.ifsc || '',
+      account_no: entry.account_no || '',
       amount: entry.amount != null ? String(entry.amount) : '',
-      status: entry.status || 'Success',
-      date_of_distribution: entry.date_of_distribution || '',
       letter_no: entry.letter_no || '',
-      date_of_sending: entry.date_of_sending || '',
+      application_date: entry.application_date || '',
+      transfer_date: entry.transfer_date || '',
+      status: entry.status || 'NotSubmited',
+      registration_year: entry.registration_year || '',
+      remarks: entry.remarks || '',
     })
     setShowForm(true)
   }
@@ -143,8 +155,8 @@ export default function SubsidyStatusPage() {
     const payload = {
       ...form,
       amount: form.amount ? parseFloat(form.amount) : null,
-      date_of_distribution: form.date_of_distribution || null,
-      date_of_sending: form.date_of_sending || null,
+      application_date: form.application_date || null,
+      transfer_date: form.transfer_date || null,
     }
     let error: any
     if (editEntry?.id) {
@@ -177,32 +189,36 @@ export default function SubsidyStatusPage() {
     else { showMsg('success', 'All records deleted.'); fetchEntries() }
   }
 
-  // Parses rows pasted from Excel (tab-separated): Sno, VehicleNO, Name,
-  // VehicleCategory, Amount, Status, DateofDistribution, LetterNO, DateofSending
+  // Parses rows pasted from Excel (tab-separated), optional leading Sno column:
+  // VehicleNo, OwnerName, MobileNO, Category, IFSC, AccountNO, Amount,
+  // LetterNo, Date, TransferDate, Status, RegistrationYear, Remarks
   function parseBulkRows(text: string) {
     return text
       .split(/\r?\n/)
       // don't trim the whole line first — trailing tab-separated empty
-      // columns (common: DateofDistribution/LetterNO/DateofSending are
-      // often blank) would get stripped before we can count columns
+      // columns (dates/remarks are often blank) would get stripped before
+      // we can count columns correctly
       .filter(l => l.replace(/\t/g, '').trim() !== '')
-      .filter(l => !/vehicleno/i.test(l)) // skip header row
+      .filter(l => !/vehicle\s*no/i.test(l)) // skip header row
       .map(line => {
         let cols = line.split('\t')
         if (cols.length === 1) cols = line.split(',')
-        if (cols.length >= 6 && /^\d+$/.test(cols[0].trim())) cols = cols.slice(1)
+        if (cols.length >= 8 && /^\d+$/.test(cols[0].trim())) cols = cols.slice(1)
         cols = cols.map(c => c.trim())
-        if (cols.length < 5) return null
-        const [vehicle_no, applicant_name, vehicle_category, amountStr, status, dateOfDistribution, letter_no, dateOfSending] = cols
+        if (cols.length < 4) return null
+        const [vehicle_no, owner_name, mobile_no, category, ifsc, account_no, amountStr, letter_no, applicationDate, transferDate, status, registration_year, remarks] = cols
         if (!vehicle_no) return null
         const amountNum = amountStr ? parseFloat(amountStr.replace(/,/g, '')) : NaN
         return {
-          vehicle_no, applicant_name, vehicle_category,
+          vehicle_no, owner_name: owner_name || '', mobile_no: mobile_no || '', category: category || '',
+          ifsc: ifsc || '', account_no: account_no || '',
           amount: isNaN(amountNum) ? null : amountNum,
-          status: status || 'Pending',
-          date_of_distribution: toISODate(dateOfDistribution || ''),
           letter_no: letter_no || '',
-          date_of_sending: toISODate(dateOfSending || ''),
+          application_date: toISODate(applicationDate || ''),
+          transfer_date: toISODate(transferDate || ''),
+          status: status || 'NotSubmited',
+          registration_year: registration_year || '',
+          remarks: remarks || '',
         }
       })
       .filter((r): r is NonNullable<typeof r> => !!r && !!r.vehicle_no)
@@ -277,7 +293,7 @@ export default function SubsidyStatusPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4 no-print">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-4 no-print">
           <div className="bg-white border border-gray-200 rounded-xl px-3 py-3 text-center">
             <div className="text-xl font-bold text-blue-900">{entries.length}</div>
             <div className="text-[11px] text-gray-500 mt-0.5">कुल एंट्री</div>
@@ -297,7 +313,7 @@ export default function SubsidyStatusPage() {
         <div className="flex flex-wrap gap-2 mb-4 no-print">
           <input
             type="text"
-            placeholder="Search by vehicle no, name, letter no..."
+            placeholder="Search by vehicle no, owner, mobile, letter no..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[220px] focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -318,27 +334,32 @@ export default function SubsidyStatusPage() {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="bg-blue-900 text-white">
-                  {['#', 'Vehicle No', 'Applicant Name', 'Category', 'Amount', 'Status', 'Date of Distribution', 'Letter No', 'Date of Sending', 'Actions'].map(h => (
+                  {['#', 'Vehicle No', 'Owner Name', 'Mobile No', 'Category', 'IFSC', 'Account No', 'Amount', 'Letter No', 'Date', 'Transfer Date', 'Status', 'Reg. Year', 'Remarks', 'Actions'].map(h => (
                     <th key={h} className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={10} className="text-center py-10 text-gray-400">No entries found</td></tr>
+                  <tr><td colSpan={15} className="text-center py-10 text-gray-400">No entries found</td></tr>
                 ) : filtered.map((entry, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{entries.findIndex(e => e.id === entry.id) + 1}</td>
                     <td className="px-3 py-2 text-xs font-mono font-semibold text-blue-900 whitespace-nowrap">{entry.vehicle_no}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.applicant_name || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.vehicle_category || '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.owner_name || '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.mobile_no || '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.category || '—'}</td>
+                    <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">{entry.ifsc || '—'}</td>
+                    <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">{entry.account_no || '—'}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.amount != null ? `₹${entry.amount.toLocaleString('en-IN')}` : '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.letter_no || '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.application_date) || '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.transfer_date) || '—'}</td>
                     <td className="px-3 py-2 text-xs">
                       <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${statusClasses(entry.status)}`}>{entry.status}</span>
                     </td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.date_of_distribution) || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.letter_no || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.date_of_sending) || '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.registration_year || '—'}</td>
+                    <td className="px-3 py-2 text-xs max-w-[200px] whitespace-pre-line">{entry.remarks || '—'}</td>
                     <td className="px-3 py-2 text-xs no-print">
                       <div className="flex gap-1">
                         <button onClick={() => requestEdit(entry)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
@@ -356,27 +377,37 @@ export default function SubsidyStatusPage() {
       {/* Add/Edit Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center overflow-y-auto py-8">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 p-6">
             <h2 className="text-lg font-bold text-blue-900 mb-5">{editEntry ? 'Edit Entry' : 'Add New Entry'}</h2>
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">Vehicle No</label>
                   <input type="text" value={form.vehicle_no} onChange={e => setForm(f => ({ ...f, vehicle_no: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Applicant Name</label>
-                  <input type="text" value={form.applicant_name} onChange={e => setForm(f => ({ ...f, applicant_name: e.target.value }))}
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Owner Name</label>
+                  <input type="text" value={form.owner_name} onChange={e => setForm(f => ({ ...f, owner_name: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Mobile No</label>
+                  <input type="text" value={form.mobile_no} onChange={e => setForm(f => ({ ...f, mobile_no: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Vehicle Category</label>
-                  <input type="text" value={form.vehicle_category} onChange={e => setForm(f => ({ ...f, vehicle_category: e.target.value }))}
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Category</label>
+                  <input type="text" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                     placeholder="e.g. 2WN, 3WT, Motor Car"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Registration Year</label>
+                  <input type="text" value={form.registration_year} onChange={e => setForm(f => ({ ...f, registration_year: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
                 <div>
@@ -384,32 +415,50 @@ export default function SubsidyStatusPage() {
                   <input type="number" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Status</label>
-                  <input list="subsidy-status-suggestions" type="text" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
-                  <datalist id="subsidy-status-suggestions">
-                    {STATUS_SUGGESTIONS.map(s => <option key={s} value={s} />)}
-                  </datalist>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">IFSC</label>
+                  <input type="text" value={form.ifsc} onChange={e => setForm(f => ({ ...f, ifsc: e.target.value.toUpperCase() }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Account No</label>
+                  <input type="text" value={form.account_no} onChange={e => setForm(f => ({ ...f, account_no: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Date of Distribution</label>
-                  <input type="date" value={form.date_of_distribution} onChange={e => setForm(f => ({ ...f, date_of_distribution: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">Letter No</label>
                   <input type="text" value={form.letter_no} onChange={e => setForm(f => ({ ...f, letter_no: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Date of Sending</label>
-                  <input type="date" value={form.date_of_sending} onChange={e => setForm(f => ({ ...f, date_of_sending: e.target.value }))}
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Date</label>
+                  <input type="date" value={form.application_date} onChange={e => setForm(f => ({ ...f, application_date: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Transfer Date</label>
+                  <input type="date" value={form.transfer_date} onChange={e => setForm(f => ({ ...f, transfer_date: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Status</label>
+                  <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Remarks</label>
+                <textarea value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
               </div>
             </div>
 
@@ -429,7 +478,7 @@ export default function SubsidyStatusPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6">
             <h2 className="text-lg font-bold text-blue-900 mb-2">Bulk Import Subsidy Status</h2>
             <p className="text-sm text-gray-500 mb-4">
-              Excel से पंक्तियाँ कॉपी-पेस्ट करें (Tab-separated): Sno, VehicleNO, Name, VehicleCategory, Amount, Status, DateofDistribution, LetterNO, DateofSending — हेडर रो और क्रमांक कॉलम अपने आप हट जाएंगे।
+              Excel से पंक्तियाँ कॉपी-पेस्ट करें (Tab-separated): VehicleNo, OwnerName, MobileNO, Category, IFSC, AccountNO, Amount, LetterNo, Date, TransferDate, Status, RegistrationYear, Remarks — हेडर रो और क्रमांक कॉलम अपने आप हट जाएंगे।
             </p>
 
             <div className="mb-4 rounded-lg border border-gray-200 overflow-hidden">
@@ -459,7 +508,7 @@ export default function SubsidyStatusPage() {
               value={bulkText}
               onChange={e => setBulkText(e.target.value)}
               rows={10}
-              placeholder="1&#9;CG05AP2390&#9;SHEKHAR DEWANGAN&#9;Three Wheeler (Passenger)&#9;19398&#9;Success"
+              placeholder="CG05AP2390&#9;SHEKHAR DEWANGAN&#9;9999999999&#9;Three Wheeler (Passenger)&#9;BKID0009360&#9;936018210001048&#9;19398&#9;LTR123&#9;&#9;&#9;Success"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300"
             />
             <p className="text-xs text-gray-400 mt-1">{parseBulkRows(bulkText).length} valid row(s) detected</p>
