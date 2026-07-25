@@ -115,3 +115,16 @@ export type Complaint = {
   file_link: string
   created_at?: string
 }
+
+export type SubsidyStatus = {
+  id?: number
+  vehicle_no: string
+  applicant_name: string
+  vehicle_category: string
+  amount: number | null
+  status: string
+  date_of_distribution: string | null
+  letter_no: string
+  date_of_sending: string | null
+  created_at?: string
+}

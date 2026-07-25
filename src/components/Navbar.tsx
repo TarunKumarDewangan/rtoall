@@ -17,7 +17,13 @@ const navItems: NavItem[] = [
   },
   { href: '/backlog-received', label: 'File IN/Out' },
   { href: '/complaints', label: 'शिकायत' },
-  { href: '/subsidy', label: 'Subsidy' },
+  {
+    label: 'EV Subsidy',
+    children: [
+      { href: '/subsidy', label: 'Received Application' },
+      { href: '/subsidy-status', label: 'EV Subsidy Status' },
+    ],
+  },
   {
     label: 'OfficeOW',
     children: [

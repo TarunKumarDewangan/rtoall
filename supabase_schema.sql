@@ -133,6 +133,19 @@ CREATE TABLE IF NOT EXISTS complaints (
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS remarks TEXT;
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS file_link TEXT;
 
+-- 9. EV Subsidy Status (disbursement tracking, separate from Subsidy Entries' document checklist)
+CREATE TABLE IF NOT EXISTS subsidy_status (
+  id SERIAL PRIMARY KEY,
+  vehicle_no VARCHAR(50),
+  applicant_name VARCHAR(255),
+  vehicle_category VARCHAR(100),
+  amount NUMERIC(12,2),
+  status VARCHAR(50) DEFAULT 'Pending',
+  date_of_distribution DATE,
+  letter_no VARCHAR(100),
+  date_of_sending DATE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
 
@@ -146,6 +159,7 @@ CREATE POLICY "Allow all" ON notesheets FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON subsidy_entries FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON work_done_registry FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON complaints FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON subsidy_status FOR ALL USING (true) WITH CHECK (true);
 
 -- Enable RLS on all tables
 ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
@@ -156,3 +170,4 @@ ALTER TABLE notesheets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subsidy_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE work_done_registry ENABLE ROW LEVEL SECURITY;
 ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subsidy_status ENABLE ROW LEVEL SECURITY;
