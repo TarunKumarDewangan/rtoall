@@ -2,7 +2,48 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, Complaint, fetchAllRows, fetchAllColumnValues } from '@/lib/supabase'
+import { parseExcelFile } from '@/lib/excelImport'
 import PinModal from '@/components/PinModal'
+
+// Normalized header text -> field key, for matching an uploaded Excel
+// file's header row regardless of spacing/casing/language (English or the
+// Hindi labels used by the original report export both resolve the same).
+const EXCEL_HEADER_MAP: Record<string, string> = {
+  tokenno: 'token_no', token: 'token_no', 'टोकननंबर': 'token_no',
+  complaintdate: 'complaint_date', date: 'complaint_date', 'शिकायतदिनांक': 'complaint_date',
+  department: 'department', 'विभाग': 'department',
+  depthead: 'dept_head', departmenthead: 'dept_head', 'विभागाध्यक्ष': 'dept_head',
+  category: 'category', 'शिकायतश्रेणी': 'category',
+  description: 'description', 'शिकायतविवरण': 'description',
+  district: 'district', 'जिला': 'district',
+  loginuserid: 'login_user_id', loginid: 'login_user_id', 'लॉगिनयूज़रआईडी': 'login_user_id',
+  officername: 'officer_name', 'अधिकारीनाम': 'officer_name',
+  officerdesignation: 'officer_designation', 'अधिकारीपदनाम': 'officer_designation',
+  officerlevel: 'officer_level', level: 'officer_level', 'अधिकारीस्तर': 'officer_level',
+  status: 'status', 'स्थिति': 'status',
+  mobileno: 'mobile_no', mobile: 'mobile_no', 'नागरिकमोबाइल': 'mobile_no',
+  resolveddate: 'resolved_date', transferdate: 'resolved_date', 'निराकरणदिनांक': 'resolved_date', 'मेंडदिनांक': 'resolved_date',
+  remarks: 'remarks', 'टिप्पणी': 'remarks',
+}
+const EXCEL_REQUIRED_FIELDS = ['token_no']
+
+type ParsedComplaintRow = {
+  token_no: string
+  complaint_date: string | null
+  resolved_date: string | null
+  department: string
+  dept_head: string
+  category: string
+  description: string
+  district: string
+  login_user_id: string
+  officer_name: string
+  officer_designation: string
+  officer_level: string
+  status: string
+  mobile_no: string
+  remarks?: string
+}
 
 const EMPTY_FORM = {
   token_no: '',
@@ -80,10 +121,12 @@ export default function ComplaintsPage() {
   const [deleteId, setDeleteId] = useState<number | null>(null)
 
   const [showBulk, setShowBulk] = useState(false)
+  const [bulkSource, setBulkSource] = useState<'paste' | 'excel'>('paste')
   const [bulkText, setBulkText] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
   const [bulkMode, setBulkMode] = useState<'skip' | 'replace'>('skip')
   const [bulkLog, setBulkLog] = useState<string | null>(null)
+  const [excelFileName, setExcelFileName] = useState<string | null>(null)
 
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
@@ -280,9 +323,32 @@ export default function ComplaintsPage() {
       .filter((r): r is NonNullable<typeof r> => !!r && !!r.token_no)
   }
 
-  async function handleBulkImport() {
-    const parsed = parseBulkRows(bulkText)
-    if (parsed.length === 0) { showMsg('error', 'कोई मान्य पंक्ति नहीं मिली। Tab-separated data पेस्ट करें।'); return }
+  function excelRowToParsedRow(row: Record<string, string>): ParsedComplaintRow | null {
+    const token_no = (row.token_no || '').trim()
+    if (!token_no) return null
+    return {
+      token_no,
+      complaint_date: toISODate(row.complaint_date || ''),
+      resolved_date: toISODate(row.resolved_date || ''),
+      department: row.department || '',
+      dept_head: row.dept_head || '',
+      category: row.category || '',
+      description: row.description || '',
+      district: row.district || '',
+      login_user_id: row.login_user_id || '',
+      officer_name: row.officer_name || '',
+      officer_designation: row.officer_designation || '',
+      officer_level: row.officer_level || '',
+      status: row.status || 'Feedback Pending',
+      mobile_no: row.mobile_no || '',
+      remarks: row.remarks || '',
+    }
+  }
+
+  // Shared by both the paste-textarea import and the Excel-file import —
+  // handles duplicate skip/replace and the actual insert either way.
+  async function importRows(parsed: ParsedComplaintRow[]) {
+    if (parsed.length === 0) { showMsg('error', 'कोई मान्य पंक्ति नहीं मिली।'); return }
 
     setBulkSaving(true)
     setBulkLog(null)
@@ -315,8 +381,28 @@ export default function ComplaintsPage() {
       setShowBulk(false)
       setBulkText('')
       setBulkLog(null)
+      setExcelFileName(null)
       fetchEntries()
     }
+  }
+
+  async function handleBulkImport() {
+    await importRows(parseBulkRows(bulkText))
+  }
+
+  async function handleExcelFile(file: File) {
+    setExcelFileName(file.name)
+    setBulkSaving(true)
+    setBulkLog(null)
+    const result = await parseExcelFile(file, EXCEL_HEADER_MAP, EXCEL_REQUIRED_FIELDS)
+    if ('error' in result) {
+      setBulkSaving(false)
+      showMsg('error', result.error)
+      return
+    }
+    const parsed = result.rows.map(excelRowToParsedRow).filter((r): r is ParsedComplaintRow => !!r)
+    setBulkSaving(false)
+    await importRows(parsed)
   }
 
   function openReportView() {
@@ -602,11 +688,33 @@ export default function ComplaintsPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center overflow-y-auto py-8">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6">
             <h2 className="text-lg font-bold text-blue-900 mb-2">Bulk Import Complaints</h2>
-            <p className="text-sm text-gray-500 mb-4">
-              Excel से पंक्तियाँ कॉपी-पेस्ट करें (Tab-separated) — दोनों फॉर्मेट अपने आप पहचाने जाते हैं, क्रमांक कॉलम अपने आप हट जाएगा:
-              <br />• पुराना फॉर्मेट: टोकन, दिनांक, विभाग, विभागाध्यक्ष, श्रेणी, विवरण, जिला, लॉगिन आईडी, स्तर, स्थिति, मोबाइल
-              <br />• नया फॉर्मेट: विभाग, विभागाध्यक्ष, जिला, टोकन, दिनांक, मेंड दिनांक, श्रेणी, विवरण, लॉगिन आईडी, अधिकारी नाम, अधिकारी पदनाम, स्तर, स्थिति
-            </p>
+
+            <div className="flex gap-2 mb-4 border-b border-gray-200">
+              <button
+                onClick={() => setBulkSource('paste')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bulkSource === 'paste' ? 'border-blue-700 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                📋 Paste Text
+              </button>
+              <button
+                onClick={() => setBulkSource('excel')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bulkSource === 'excel' ? 'border-blue-700 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                📊 Upload Excel File
+              </button>
+            </div>
+
+            {bulkSource === 'paste' ? (
+              <p className="text-sm text-gray-500 mb-4">
+                Excel से पंक्तियाँ कॉपी-पेस्ट करें (Tab-separated) — दोनों फॉर्मेट अपने आप पहचाने जाते हैं, क्रमांक कॉलम अपने आप हट जाएगा:
+                <br />• पुराना फॉर्मेट: टोकन, दिनांक, विभाग, विभागाध्यक्ष, श्रेणी, विवरण, जिला, लॉगिन आईडी, स्तर, स्थिति, मोबाइल
+                <br />• नया फॉर्मेट: विभाग, विभागाध्यक्ष, जिला, टोकन, दिनांक, मेंड दिनांक, श्रेणी, विवरण, लॉगिन आईडी, अधिकारी नाम, अधिकारी पदनाम, स्तर, स्थिति
+              </p>
+            ) : (
+              <p className="text-sm text-gray-500 mb-4">
+                .xlsx/.xls फ़ाइल सीधे अपलोड करें। हेडर रो में ये कॉलम नाम पहचाने जाते हैं (कोई भी क्रम में, हिंदी या अंग्रेज़ी): Token No, Complaint Date, Department, Dept Head, Category, Description, District, Login User Id, Officer Name, Officer Designation, Officer Level, Status, Mobile No, Resolved Date, Remarks। सिर्फ <strong>Token No</strong> ज़रूरी है — अगर वो कॉलम नहीं मिला तो पूरा इम्पोर्ट रुक जाएगा। बाकी अनजान कॉलम अपने आप नज़रअंदाज़ हो जाते हैं।
+              </p>
+            )}
 
             <div className="mb-4 rounded-lg border border-gray-200 overflow-hidden">
               <div
@@ -631,14 +739,32 @@ export default function ComplaintsPage() {
               </div>
             </div>
 
-            <textarea
-              value={bulkText}
-              onChange={e => setBulkText(e.target.value)}
-              rows={10}
-              placeholder="CC260700096707&#9;15-07-2026&#9;परिवहन विभाग&#9;...&#9;9999999999"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
-            <p className="text-xs text-gray-400 mt-1">{parseBulkRows(bulkText).length} valid row(s) detected</p>
+            {bulkSource === 'paste' ? (
+              <>
+                <textarea
+                  value={bulkText}
+                  onChange={e => setBulkText(e.target.value)}
+                  rows={10}
+                  placeholder="CC260700096707&#9;15-07-2026&#9;परिवहन विभाग&#9;...&#9;9999999999"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300"
+                />
+                <p className="text-xs text-gray-400 mt-1">{parseBulkRows(bulkText).length} valid row(s) detected</p>
+              </>
+            ) : (
+              <div>
+                <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg px-4 py-8 cursor-pointer hover:bg-gray-50 transition">
+                  <span className="text-3xl">📊</span>
+                  <span className="text-sm font-medium text-gray-700">{excelFileName || 'Click to choose an Excel file (.xlsx/.xls/.csv)'}</span>
+                  <span className="text-xs text-gray-400">Import starts automatically once selected</span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleExcelFile(f); e.target.value = '' }}
+                  />
+                </label>
+              </div>
+            )}
 
             {bulkLog && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-800 mt-3">
@@ -647,14 +773,16 @@ export default function ComplaintsPage() {
             )}
 
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => { setShowBulk(false); setBulkLog(null) }} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition">Cancel</button>
-              <button
-                onClick={handleBulkImport}
-                disabled={bulkSaving}
-                className={`px-5 py-2 rounded-lg text-white text-sm font-semibold transition disabled:opacity-60 ${bulkMode === 'replace' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-900 hover:bg-blue-800'}`}
-              >
-                {bulkSaving ? 'Importing...' : bulkMode === 'replace' ? '⚠️ Delete All & Import' : '✅ Smart Import'}
-              </button>
+              <button onClick={() => { setShowBulk(false); setBulkLog(null); setExcelFileName(null) }} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition">Cancel</button>
+              {bulkSource === 'paste' && (
+                <button
+                  onClick={handleBulkImport}
+                  disabled={bulkSaving}
+                  className={`px-5 py-2 rounded-lg text-white text-sm font-semibold transition disabled:opacity-60 ${bulkMode === 'replace' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-900 hover:bg-blue-800'}`}
+                >
+                  {bulkSaving ? 'Importing...' : bulkMode === 'replace' ? '⚠️ Delete All & Import' : '✅ Smart Import'}
+                </button>
+              )}
             </div>
           </div>
         </div>

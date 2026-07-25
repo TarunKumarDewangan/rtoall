@@ -15,7 +15,8 @@
     "caniuse-lite": "^1.0.30001700",
     "next": "^15.5.20",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

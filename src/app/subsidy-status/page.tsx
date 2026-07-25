@@ -2,7 +2,44 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, SubsidyStatus, fetchAllRows, fetchAllColumnValues } from '@/lib/supabase'
+import { parseExcelFile } from '@/lib/excelImport'
 import PinModal from '@/components/PinModal'
+
+// Normalized header text -> field key, used to match an uploaded Excel
+// file's header row regardless of spacing/casing ("VEHICLE NO", "Vehicle
+// No", "vehicleno" all resolve to vehicle_no).
+const EXCEL_HEADER_MAP: Record<string, string> = {
+  vehicleno: 'vehicle_no', vehicle: 'vehicle_no', vehiclenumber: 'vehicle_no',
+  ownername: 'owner_name', name: 'owner_name', applicantname: 'owner_name',
+  mobileno: 'mobile_no', mobile: 'mobile_no', mobilenumber: 'mobile_no',
+  category: 'category', vehiclecategory: 'category', vehicledesc: 'category',
+  ifsc: 'ifsc',
+  accountno: 'account_no', account: 'account_no', accountnumber: 'account_no',
+  amount: 'amount', subsidyamt: 'amount', subsidyamount: 'amount',
+  letterno: 'letter_no', letter: 'letter_no',
+  date: 'application_date', applicationdate: 'application_date', dateofdistribution: 'application_date',
+  transferdate: 'transfer_date', dateofsending: 'transfer_date',
+  status: 'status',
+  registrationyear: 'registration_year', regyear: 'registration_year', year: 'registration_year',
+  remarks: 'remarks', remark: 'remarks',
+}
+const EXCEL_REQUIRED_FIELDS = ['vehicle_no']
+
+type ParsedRow = {
+  vehicle_no: string
+  owner_name: string
+  mobile_no: string
+  category: string
+  ifsc: string
+  account_no: string
+  amount: number | null
+  letter_no: string
+  application_date: string | null
+  transfer_date: string | null
+  status: string
+  registration_year: string
+  remarks: string
+}
 
 const EMPTY_FORM = {
   vehicle_no: '',
@@ -63,10 +100,12 @@ export default function SubsidyStatusPage() {
   const [deleteId, setDeleteId] = useState<number | null>(null)
 
   const [showBulk, setShowBulk] = useState(false)
+  const [bulkSource, setBulkSource] = useState<'paste' | 'excel'>('paste')
   const [bulkText, setBulkText] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
   const [bulkMode, setBulkMode] = useState<'skip' | 'replace'>('skip')
   const [bulkLog, setBulkLog] = useState<string | null>(null)
+  const [excelFileName, setExcelFileName] = useState<string | null>(null)
 
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
@@ -192,7 +231,7 @@ export default function SubsidyStatusPage() {
   // Parses rows pasted from Excel (tab-separated), optional leading Sno column:
   // VehicleNo, OwnerName, MobileNO, Category, IFSC, AccountNO, Amount,
   // LetterNo, Date, TransferDate, Status, RegistrationYear, Remarks
-  function parseBulkRows(text: string) {
+  function parseBulkRows(text: string): ParsedRow[] {
     return text
       .split(/\r?\n/)
       // don't trim the whole line first — trailing tab-separated empty
@@ -224,9 +263,31 @@ export default function SubsidyStatusPage() {
       .filter((r): r is NonNullable<typeof r> => !!r && !!r.vehicle_no)
   }
 
-  async function handleBulkImport() {
-    const parsed = parseBulkRows(bulkText)
-    if (parsed.length === 0) { showMsg('error', 'No valid rows found. Paste tab-separated data.'); return }
+  function excelRowToParsedRow(row: Record<string, string>): ParsedRow | null {
+    const vehicle_no = (row.vehicle_no || '').trim()
+    if (!vehicle_no) return null
+    const amountNum = row.amount ? parseFloat(row.amount.replace(/,/g, '')) : NaN
+    return {
+      vehicle_no,
+      owner_name: row.owner_name || '',
+      mobile_no: row.mobile_no || '',
+      category: row.category || '',
+      ifsc: row.ifsc || '',
+      account_no: row.account_no || '',
+      amount: isNaN(amountNum) ? null : amountNum,
+      letter_no: row.letter_no || '',
+      application_date: toISODate(row.application_date || ''),
+      transfer_date: toISODate(row.transfer_date || ''),
+      status: row.status || 'NotSubmited',
+      registration_year: row.registration_year || '',
+      remarks: row.remarks || '',
+    }
+  }
+
+  // Shared by both the paste-textarea import and the Excel-file import —
+  // handles duplicate skip/replace and the actual insert either way.
+  async function importRows(parsed: ParsedRow[]) {
+    if (parsed.length === 0) { showMsg('error', 'No valid rows found.'); return }
 
     setBulkSaving(true)
     setBulkLog(null)
@@ -259,8 +320,28 @@ export default function SubsidyStatusPage() {
       setShowBulk(false)
       setBulkText('')
       setBulkLog(null)
+      setExcelFileName(null)
       fetchEntries()
     }
+  }
+
+  async function handleBulkImport() {
+    await importRows(parseBulkRows(bulkText))
+  }
+
+  async function handleExcelFile(file: File) {
+    setExcelFileName(file.name)
+    setBulkSaving(true)
+    setBulkLog(null)
+    const result = await parseExcelFile(file, EXCEL_HEADER_MAP, EXCEL_REQUIRED_FIELDS)
+    if ('error' in result) {
+      setBulkSaving(false)
+      showMsg('error', result.error)
+      return
+    }
+    const parsed = result.rows.map(excelRowToParsedRow).filter((r): r is ParsedRow => !!r)
+    setBulkSaving(false)
+    await importRows(parsed)
   }
 
   return (
@@ -477,9 +558,31 @@ export default function SubsidyStatusPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center overflow-y-auto py-8">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6">
             <h2 className="text-lg font-bold text-blue-900 mb-2">Bulk Import Subsidy Status</h2>
-            <p className="text-sm text-gray-500 mb-4">
-              Excel से पंक्तियाँ कॉपी-पेस्ट करें (Tab-separated): VehicleNo, OwnerName, MobileNO, Category, IFSC, AccountNO, Amount, LetterNo, Date, TransferDate, Status, RegistrationYear, Remarks — हेडर रो और क्रमांक कॉलम अपने आप हट जाएंगे।
-            </p>
+
+            <div className="flex gap-2 mb-4 border-b border-gray-200">
+              <button
+                onClick={() => setBulkSource('paste')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bulkSource === 'paste' ? 'border-blue-700 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                📋 Paste Text
+              </button>
+              <button
+                onClick={() => setBulkSource('excel')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bulkSource === 'excel' ? 'border-blue-700 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                📊 Upload Excel File
+              </button>
+            </div>
+
+            {bulkSource === 'paste' ? (
+              <p className="text-sm text-gray-500 mb-4">
+                Excel से पंक्तियाँ कॉपी-पेस्ट करें (Tab-separated): VehicleNo, OwnerName, MobileNO, Category, IFSC, AccountNO, Amount, LetterNo, Date, TransferDate, Status, RegistrationYear, Remarks — हेडर रो और क्रमांक कॉलम अपने आप हट जाएंगे।
+              </p>
+            ) : (
+              <p className="text-sm text-gray-500 mb-4">
+                .xlsx/.xls फ़ाइल सीधे अपलोड करें। हेडर रो में ये कॉलम नाम पहचाने जाते हैं (कोई भी क्रम में): Vehicle No, Owner Name, Mobile No, Category, IFSC, Account No, Amount, Letter No, Date, Transfer Date, Status, Registration Year, Remarks। सिर्फ <strong>Vehicle No</strong> ज़रूरी है — अगर वो कॉलम नहीं मिला तो पूरा इम्पोर्ट रुक जाएगा और गलत डेटा नहीं जाएगा। बाकी अनजान कॉलम अपने आप नज़रअंदाज़ हो जाते हैं।
+              </p>
+            )}
 
             <div className="mb-4 rounded-lg border border-gray-200 overflow-hidden">
               <div
@@ -504,14 +607,32 @@ export default function SubsidyStatusPage() {
               </div>
             </div>
 
-            <textarea
-              value={bulkText}
-              onChange={e => setBulkText(e.target.value)}
-              rows={10}
-              placeholder="CG05AP2390&#9;SHEKHAR DEWANGAN&#9;9999999999&#9;Three Wheeler (Passenger)&#9;BKID0009360&#9;936018210001048&#9;19398&#9;LTR123&#9;&#9;&#9;Success"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
-            <p className="text-xs text-gray-400 mt-1">{parseBulkRows(bulkText).length} valid row(s) detected</p>
+            {bulkSource === 'paste' ? (
+              <>
+                <textarea
+                  value={bulkText}
+                  onChange={e => setBulkText(e.target.value)}
+                  rows={10}
+                  placeholder="CG05AP2390&#9;SHEKHAR DEWANGAN&#9;9999999999&#9;Three Wheeler (Passenger)&#9;BKID0009360&#9;936018210001048&#9;19398&#9;LTR123&#9;&#9;&#9;Success"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300"
+                />
+                <p className="text-xs text-gray-400 mt-1">{parseBulkRows(bulkText).length} valid row(s) detected</p>
+              </>
+            ) : (
+              <div>
+                <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg px-4 py-8 cursor-pointer hover:bg-gray-50 transition">
+                  <span className="text-3xl">📊</span>
+                  <span className="text-sm font-medium text-gray-700">{excelFileName || 'Click to choose an Excel file (.xlsx/.xls/.csv)'}</span>
+                  <span className="text-xs text-gray-400">Import starts automatically once selected</span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleExcelFile(f); e.target.value = '' }}
+                  />
+                </label>
+              </div>
+            )}
 
             {bulkLog && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-800 mt-3">
@@ -520,14 +641,16 @@ export default function SubsidyStatusPage() {
             )}
 
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => { setShowBulk(false); setBulkLog(null) }} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition">Cancel</button>
-              <button
-                onClick={handleBulkImport}
-                disabled={bulkSaving}
-                className={`px-5 py-2 rounded-lg text-white text-sm font-semibold transition disabled:opacity-60 ${bulkMode === 'replace' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-900 hover:bg-blue-800'}`}
-              >
-                {bulkSaving ? 'Importing...' : bulkMode === 'replace' ? '⚠️ Delete All & Import' : '✅ Smart Import'}
-              </button>
+              <button onClick={() => { setShowBulk(false); setBulkLog(null); setExcelFileName(null) }} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition">Cancel</button>
+              {bulkSource === 'paste' && (
+                <button
+                  onClick={handleBulkImport}
+                  disabled={bulkSaving}
+                  className={`px-5 py-2 rounded-lg text-white text-sm font-semibold transition disabled:opacity-60 ${bulkMode === 'replace' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-900 hover:bg-blue-800'}`}
+                >
+                  {bulkSaving ? 'Importing...' : bulkMode === 'replace' ? '⚠️ Delete All & Import' : '✅ Smart Import'}
+                </button>
+              )}
             </div>
           </div>
         </div>
