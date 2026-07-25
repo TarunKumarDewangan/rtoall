@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { supabase, BacklogEntry } from '@/lib/supabase'
+import { supabase, BacklogEntry, fetchAllRows } from '@/lib/supabase'
 import PinModal from '@/components/PinModal'
 
 const STATUS_OPTIONS = ['Pending', 'Whitelisted', 'Done', 'Sent', 'SEND INCOMPLETE', 'WHITELISTED BUT DOCINCOM', 'LetterMaking']
@@ -57,10 +57,7 @@ export default function BacklogPage() {
 
   const fetchEntries = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('backlog_entries')
-      .select('*')
-      .order('created_at', { ascending: false })
+    const { data, error } = await fetchAllRows<BacklogEntry>('backlog_entries', 'created_at', false)
     if (error) showMsg('error', error.message)
     else setEntries(data || [])
     setLoading(false)

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { supabase, GhosnapatraEntry } from '@/lib/supabase'
+import { supabase, GhosnapatraEntry, fetchAllRows } from '@/lib/supabase'
 import PinModal from '@/components/PinModal'
 
 const EMPTY_FORM = {
@@ -45,10 +45,7 @@ export default function GhoshnapatraPage() {
 
   async function fetchEntries() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('ghosnapatra_entries')
-      .select('*')
-      .order('created_at', { ascending: false })
+    const { data, error } = await fetchAllRows<GhosnapatraEntry>('ghosnapatra_entries', 'created_at', false)
     if (error) showMsg('error', error.message)
     else setEntries(data || [])
     setLoading(false)

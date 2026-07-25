@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { supabase, Complaint } from '@/lib/supabase'
+import { supabase, Complaint, fetchAllRows, fetchAllColumnValues } from '@/lib/supabase'
 import PinModal from '@/components/PinModal'
 
 const EMPTY_FORM = {
@@ -97,10 +97,7 @@ export default function ComplaintsPage() {
 
   async function fetchEntries() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('complaints')
-      .select('*')
-      .order('complaint_date', { ascending: false })
+    const { data, error } = await fetchAllRows<Complaint>('complaints', 'complaint_date', false)
     if (error) showMsg('error', error.message)
     else setEntries(data || [])
     setLoading(false)
@@ -295,8 +292,8 @@ export default function ComplaintsPage() {
     if (bulkMode === 'replace') {
       await supabase.from('complaints').delete().neq('id', 0)
     } else {
-      const { data: existing } = await supabase.from('complaints').select('token_no')
-      const existingSet = new Set((existing || []).map((e: { token_no: string }) => e.token_no?.toUpperCase()))
+      const existing = await fetchAllColumnValues('complaints', 'token_no')
+      const existingSet = new Set(existing.map(v => v?.toUpperCase()))
       const skipped = parsed.filter(r => existingSet.has(r.token_no.toUpperCase()))
       toImport = parsed.filter(r => !existingSet.has(r.token_no.toUpperCase()))
       if (skipped.length > 0) {

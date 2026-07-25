@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase, BacklogReceived } from '@/lib/supabase'
+import { supabase, BacklogReceived, fetchAllRows } from '@/lib/supabase'
 import PinModal from '@/components/PinModal'
 
 const EMPTY_FORM = {
@@ -45,10 +45,7 @@ export default function BacklogReceivedPage() {
 
   async function fetchEntries() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('backlog_received')
-      .select('*')
-      .order('received_date', { ascending: false })
+    const { data, error } = await fetchAllRows<BacklogReceived>('backlog_received', 'received_date', false)
     if (error) showMsg('error', error.message)
     else setEntries(data || [])
     setLoading(false)

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase, WorkDoneEntry } from '@/lib/supabase'
+import { supabase, WorkDoneEntry, fetchAllRows } from '@/lib/supabase'
 import PinModal from '@/components/PinModal'
 
 const EMPTY_FORM = {
@@ -41,10 +41,7 @@ export default function WorkDonePage() {
 
   async function fetchEntries() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('work_done_registry')
-      .select('*')
-      .order('work_date', { ascending: false })
+    const { data, error } = await fetchAllRows<WorkDoneEntry>('work_done_registry', 'work_date', false)
     if (error) showMsg('error', error.message)
     else setEntries(data || [])
     setLoading(false)

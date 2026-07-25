@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase, SubsidyEntry } from '@/lib/supabase'
+import { supabase, SubsidyEntry, fetchAllRows, fetchAllColumnValues } from '@/lib/supabase'
 import PinModal from '@/components/PinModal'
 
 const BOOL_FIELDS = ['has_receipt', 'has_invoice', 'has_passbook', 'has_aadhaar', 'has_rc'] as const
@@ -60,10 +60,7 @@ export default function SubsidyPage() {
 
   async function fetchEntries() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('subsidy_entries')
-      .select('*')
-      .order('date_submitted', { ascending: false })
+    const { data, error } = await fetchAllRows<SubsidyEntry>('subsidy_entries', 'date_submitted', false)
     if (error) showMsg('error', error.message)
     else setEntries(data || [])
     setLoading(false)
@@ -158,10 +155,8 @@ export default function SubsidyPage() {
       await supabase.from('subsidy_entries').delete().neq('id', 0)
     } else {
       // Skip mode: fetch existing vehicle numbers and filter them out
-      const { data: existing } = await supabase
-        .from('subsidy_entries')
-        .select('vehicle_no')
-      const existingSet = new Set((existing || []).map((e: { vehicle_no: string }) => e.vehicle_no.toUpperCase()))
+      const existing = await fetchAllColumnValues('subsidy_entries', 'vehicle_no')
+      const existingSet = new Set(existing.map(v => v.toUpperCase()))
       const skipped = allVehicles.filter(v => existingSet.has(v))
       toImport = allVehicles.filter(v => !existingSet.has(v))
       if (skipped.length > 0) {

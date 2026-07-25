@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { supabase, ModifyLetter } from '@/lib/supabase'
+import { supabase, ModifyLetter, fetchAllRows } from '@/lib/supabase'
 import PinModal from '@/components/PinModal'
 
 function formatDateDisplay(dateStr: string | null) {
@@ -32,10 +32,7 @@ export default function ModifyLettersPage() {
 
   async function fetchLetters() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('modify_letters')
-      .select('*')
-      .order('created_at', { ascending: false })
+    const { data, error } = await fetchAllRows<ModifyLetter>('modify_letters', 'created_at', false)
     if (error) showMsg('error', error.message)
     else setLetters(data || [])
     setLoading(false)

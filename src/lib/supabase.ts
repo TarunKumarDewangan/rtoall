@@ -5,6 +5,50 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// PostgREST caps select('*') at 1000 rows by default, so any table that can
+// grow past that (subsidy, complaints, backlog, ...) silently truncates
+// unless we page through it with .range(). Loops until a page comes back
+// short of PAGE_SIZE, meaning we've reached the end.
+export async function fetchAllRows<T>(
+  table: string,
+  orderColumn: string,
+  ascending = false,
+  select = '*'
+): Promise<{ data: T[] | null; error: { message: string } | null }> {
+  const PAGE_SIZE = 1000
+  const all: T[] = []
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .order(orderColumn, { ascending })
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) return { data: null, error }
+    all.push(...((data as T[]) || []))
+    if (!data || data.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+  return { data: all, error: null }
+}
+
+// Same pagination trick, but for the "fetch every value of one column"
+// pattern used by bulk-import duplicate checks (e.g. all existing vehicle
+// numbers) — those must not silently miss rows past 1000 either.
+export async function fetchAllColumnValues(table: string, column: string): Promise<string[]> {
+  const PAGE_SIZE = 1000
+  const all: string[] = []
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase.from(table).select(column).range(from, from + PAGE_SIZE - 1)
+    if (error || !data) break
+    all.push(...data.map((row: any) => row[column]))
+    if (data.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+  return all
+}
+
 // Type definitions matching our database schema
 export type BacklogEntry = {
   id?: number

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase, Notesheet } from '@/lib/supabase'
+import { supabase, Notesheet, fetchAllRows } from '@/lib/supabase'
 import PinModal from '@/components/PinModal'
 
 const EMPTY_FORM = {
@@ -43,10 +43,7 @@ export default function NotesheetsPage() {
 
   async function fetchNotesheets() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('notesheets')
-      .select('*')
-      .order('note_date', { ascending: false })
+    const { data, error } = await fetchAllRows<Notesheet>('notesheets', 'note_date', false)
     if (error) showMsg('error', error.message)
     else setNotesheets(data || [])
     setLoading(false)
