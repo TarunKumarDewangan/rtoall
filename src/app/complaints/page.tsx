@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { supabase, Complaint, fetchAllRows, fetchAllColumnValues } from '@/lib/supabase'
 import { parseExcelFile } from '@/lib/excelImport'
 import PinModal from '@/components/PinModal'
@@ -10,6 +10,7 @@ import PinModal from '@/components/PinModal'
 // Hindi labels used by the original report export both resolve the same).
 const EXCEL_HEADER_MAP: Record<string, string> = {
   tokenno: 'token_no', token: 'token_no', 'टोकननंबर': 'token_no',
+  ownername: 'owner_name', name: 'owner_name', complainantname: 'owner_name', 'नाम': 'owner_name', 'शिकायतकर्तानाम': 'owner_name',
   complaintdate: 'complaint_date', date: 'complaint_date', 'शिकायतदिनांक': 'complaint_date',
   department: 'department', 'विभाग': 'department',
   depthead: 'dept_head', departmenthead: 'dept_head', 'विभागाध्यक्ष': 'dept_head',
@@ -29,6 +30,7 @@ const EXCEL_REQUIRED_FIELDS = ['token_no']
 
 type ParsedComplaintRow = {
   token_no: string
+  owner_name?: string
   complaint_date: string | null
   resolved_date: string | null
   department: string
@@ -47,6 +49,7 @@ type ParsedComplaintRow = {
 
 const EMPTY_FORM = {
   token_no: '',
+  owner_name: '',
   complaint_date: '',
   resolved_date: '',
   department: 'परिवहन विभाग',
@@ -102,6 +105,61 @@ function fromISODate(iso: string | null): string {
 
 type SortKey = keyof FormType | null
 
+type ColumnDef = { id: string; label: string; sortKey?: keyof FormType }
+
+// Order here drives both the table and the column-picker checklist.
+const COLUMNS: ColumnDef[] = [
+  { id: 'token_no', label: 'टोकन नंबर', sortKey: 'token_no' },
+  { id: 'complaint_date', label: 'दिनांक', sortKey: 'complaint_date' },
+  { id: 'category', label: 'श्रेणी' },
+  { id: 'description', label: 'विवरण' },
+  { id: 'district', label: 'जिला', sortKey: 'district' },
+  { id: 'login_user_id', label: 'लॉगिन आईडी' },
+  { id: 'officer', label: 'अधिकारी', sortKey: 'officer_name' },
+  { id: 'officer_level', label: 'स्तर', sortKey: 'officer_level' },
+  { id: 'status', label: 'स्थिति', sortKey: 'status' },
+  { id: 'resolved_date', label: 'निराकरण दिनांक', sortKey: 'resolved_date' },
+  { id: 'owner_name', label: 'नाम (Owner)', sortKey: 'owner_name' },
+  { id: 'mobile_no', label: 'मोबाइल', sortKey: 'mobile_no' },
+  { id: 'file_link', label: 'फ़ाइल' },
+  { id: 'remarks', label: 'टिप्पणी (Remarks)' },
+]
+const VISIBLE_COLS_STORAGE_KEY = 'complaints_visible_columns'
+
+const CELL_RENDERERS: Record<string, (e: Complaint) => JSX.Element> = {
+  token_no: e => <td className="px-3 py-2 text-xs font-mono font-semibold text-blue-900 whitespace-nowrap">{e.token_no}</td>,
+  complaint_date: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(e.complaint_date) || '—'}</td>,
+  category: e => <td className="px-3 py-2 text-xs max-w-[220px] truncate" title={e.category}>{e.category}</td>,
+  description: e => <td className="px-3 py-2 text-xs max-w-[520px] whitespace-pre-line">{e.description}</td>,
+  district: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.district}</td>,
+  login_user_id: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.login_user_id || '—'}</td>,
+  officer: e => (
+    <td className="px-3 py-2 text-xs whitespace-nowrap">
+      {e.officer_name ? <>{e.officer_name}<br /><span className="text-gray-400">{e.officer_designation}</span></> : '—'}
+    </td>
+  ),
+  officer_level: e => <td className="px-3 py-2 text-xs text-center whitespace-nowrap">{e.officer_level}</td>,
+  status: e => (
+    <td className="px-3 py-2 text-xs">
+      <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${statusClasses(e.status)}`}>{e.status}</span>
+    </td>
+  ),
+  resolved_date: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(e.resolved_date) || '—'}</td>,
+  owner_name: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.owner_name || '—'}</td>,
+  mobile_no: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.mobile_no || '—'}</td>,
+  file_link: e => (
+    <td className="px-3 py-2 text-xs whitespace-nowrap">
+      {e.file_link ? (
+        <a href={e.file_link} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-sky-100 text-sky-700 hover:bg-sky-200 text-xs font-medium">
+          📎 Open
+        </a>
+      ) : '—'}
+    </td>
+  ),
+  remarks: e => <td className="px-3 py-2 text-xs max-w-[220px] whitespace-pre-line">{e.remarks || '—'}</td>,
+}
+
 export default function ComplaintsPage() {
   const [entries, setEntries] = useState<Complaint[]>([])
   const [loading, setLoading] = useState(true)
@@ -112,6 +170,22 @@ export default function ComplaintsPage() {
   const [dateTo, setDateTo] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('complaint_date')
   const [sortAsc, setSortAsc] = useState(false)
+
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(COLUMNS.map(c => [c.id, true]))
+  )
+  const [showColPicker, setShowColPicker] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem(VISIBLE_COLS_STORAGE_KEY)
+    if (saved) {
+      try { setVisibleCols(prev => ({ ...prev, ...JSON.parse(saved) })) } catch {}
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(VISIBLE_COLS_STORAGE_KEY, JSON.stringify(visibleCols))
+  }, [visibleCols])
 
   const [showForm, setShowForm] = useState(false)
   const [editEntry, setEditEntry] = useState<Complaint | null>(null)
@@ -210,6 +284,7 @@ export default function ComplaintsPage() {
     setEditEntry(entry)
     setForm({
       token_no: entry.token_no || '',
+      owner_name: entry.owner_name || '',
       complaint_date: entry.complaint_date || '',
       resolved_date: entry.resolved_date || '',
       department: entry.department || '',
@@ -328,6 +403,7 @@ export default function ComplaintsPage() {
     if (!token_no) return null
     return {
       token_no,
+      owner_name: row.owner_name || '',
       complaint_date: toISODate(row.complaint_date || ''),
       resolved_date: toISODate(row.resolved_date || ''),
       department: row.department || '',
@@ -434,6 +510,36 @@ export default function ComplaintsPage() {
             <button onClick={openReportView} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
               🖨 Report View / Print
             </button>
+            <div className="relative">
+              <button onClick={() => setShowColPicker(v => !v)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition">
+                ⚙ कॉलम
+              </button>
+              {showColPicker && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowColPicker(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-64 max-h-80 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-2">
+                    <div className="flex justify-between items-center px-2 py-1 mb-1 border-b border-gray-100">
+                      <span className="text-xs font-semibold text-gray-500">दिखाएँ / छिपाएँ</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => setVisibleCols(Object.fromEntries(COLUMNS.map(c => [c.id, true])))} className="text-xs text-blue-700 hover:underline">All</button>
+                        <button onClick={() => setVisibleCols(Object.fromEntries(COLUMNS.map(c => [c.id, false])))} className="text-xs text-blue-700 hover:underline">None</button>
+                      </div>
+                    </div>
+                    {COLUMNS.map(col => (
+                      <label key={col.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm">
+                        <input
+                          type="checkbox"
+                          checked={visibleCols[col.id] !== false}
+                          onChange={e => setVisibleCols(prev => ({ ...prev, [col.id]: e.target.checked }))}
+                          className="w-4 h-4 accent-blue-700"
+                        />
+                        {col.label}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <button onClick={openAdd} className="px-4 py-2 rounded-lg bg-blue-900 text-white text-sm font-medium hover:bg-blue-800 transition">
               + Add Complaint
             </button>
@@ -505,52 +611,28 @@ export default function ComplaintsPage() {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="bg-blue-900 text-white">
-                  {[
-                    ['#', null], ['टोकन नंबर', 'token_no'], ['दिनांक', 'complaint_date'], ['श्रेणी', 'category'],
-                    ['विवरण', null], ['जिला', 'district'], ['लॉगिन आईडी', 'login_user_id'], ['अधिकारी', 'officer_name'],
-                    ['स्तर', 'officer_level'], ['स्थिति', 'status'], ['निराकरण दिनांक', 'resolved_date'], ['मोबाइल', 'mobile_no'],
-                    ['टिप्पणी (Remarks)', null], ['फ़ाइल', null], ['Actions', null],
-                  ].map(([label, key]) => (
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">#</th>
+                  {COLUMNS.filter(col => visibleCols[col.id] !== false).map(col => (
                     <th
-                      key={label as string}
-                      onClick={() => key && toggleSort(key as keyof FormType)}
-                      className={`px-3 py-3 text-left font-semibold whitespace-nowrap text-xs ${key ? 'cursor-pointer select-none hover:bg-blue-800' : ''}`}
+                      key={col.id}
+                      onClick={() => col.sortKey && toggleSort(col.sortKey)}
+                      className={`px-3 py-3 text-left font-semibold whitespace-nowrap text-xs ${col.sortKey ? 'cursor-pointer select-none hover:bg-blue-800' : ''}`}
                     >
-                      {label} {sortKey === key && (sortAsc ? '▲' : '▼')}
+                      {col.label} {sortKey === col.sortKey && (sortAsc ? '▲' : '▼')}
                     </th>
                   ))}
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={14} className="text-center py-10 text-gray-400">कोई परिणाम नहीं मिला</td></tr>
+                  <tr><td colSpan={COLUMNS.filter(c => visibleCols[c.id] !== false).length + 2} className="text-center py-10 text-gray-400">कोई परिणाम नहीं मिला</td></tr>
                 ) : filtered.map((entry, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{entries.findIndex(e => e.id === entry.id) + 1}</td>
-                    <td className="px-3 py-2 text-xs font-mono font-semibold text-blue-900 whitespace-nowrap">{entry.token_no}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.complaint_date) || '—'}</td>
-                    <td className="px-3 py-2 text-xs max-w-[220px] truncate" title={entry.category}>{entry.category}</td>
-                    <td className="px-3 py-2 text-xs max-w-[520px] whitespace-pre-line">{entry.description}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.district}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.login_user_id || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">
-                      {entry.officer_name ? <>{entry.officer_name}<br /><span className="text-gray-400">{entry.officer_designation}</span></> : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-center whitespace-nowrap">{entry.officer_level}</td>
-                    <td className="px-3 py-2 text-xs">
-                      <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${statusClasses(entry.status)}`}>{entry.status}</span>
-                    </td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.resolved_date) || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.mobile_no || '—'}</td>
-                    <td className="px-3 py-2 text-xs max-w-[220px] whitespace-pre-line">{entry.remarks || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">
-                      {entry.file_link ? (
-                        <a href={entry.file_link} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-sky-100 text-sky-700 hover:bg-sky-200 text-xs font-medium">
-                          📎 Open
-                        </a>
-                      ) : '—'}
-                    </td>
+                    {COLUMNS.filter(col => visibleCols[col.id] !== false).map(col => (
+                      <Fragment key={col.id}>{CELL_RENDERERS[col.id](entry)}</Fragment>
+                    ))}
                     <td className="px-3 py-2 text-xs">
                       <div className="flex gap-1">
                         <button onClick={() => requestEdit(entry)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
@@ -571,10 +653,15 @@ export default function ComplaintsPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6">
             <h2 className="text-lg font-bold text-blue-900 mb-5">{editEntry ? 'शिकायत संपादित करें' : 'नई शिकायत जोड़ें'}</h2>
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">टोकन नंबर</label>
                   <input type="text" value={form.token_no} onChange={e => setForm(f => ({ ...f, token_no: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">नाम (Owner)</label>
+                  <input type="text" value={form.owner_name} onChange={e => setForm(f => ({ ...f, owner_name: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
                 <div>

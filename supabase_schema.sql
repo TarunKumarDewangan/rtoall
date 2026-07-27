@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS work_done_registry (
 CREATE TABLE IF NOT EXISTS complaints (
   id SERIAL PRIMARY KEY,
   token_no VARCHAR(50),
+  owner_name VARCHAR(255),
   complaint_date DATE,
   resolved_date DATE,
   department VARCHAR(255),
@@ -132,6 +133,7 @@ CREATE TABLE IF NOT EXISTS complaints (
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS officer_designation VARCHAR(255);
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS remarks TEXT;
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS file_link TEXT;
+-- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255);
 
 -- 9. EV Subsidy Status (disbursement tracking, separate from Subsidy Entries' document checklist)
 CREATE TABLE IF NOT EXISTS subsidy_status (

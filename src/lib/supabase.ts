@@ -142,6 +142,7 @@ export type WorkDoneEntry = {
 export type Complaint = {
   id?: number
   token_no: string
+  owner_name: string
   complaint_date: string | null
   resolved_date: string | null
   department: string
