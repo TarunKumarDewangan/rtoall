@@ -1,30 +1,34 @@
 'use client'
 
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { supabase, Complaint, fetchAllRows, fetchAllColumnValues } from '@/lib/supabase'
+import { supabase, ComplaintV2, OfficerActivity, fetchAllRows, fetchAllColumnValues } from '@/lib/supabase'
 import { parseExcelFile } from '@/lib/excelImport'
 import PinModal from '@/components/PinModal'
 
 // Normalized header text -> field key, for matching an uploaded Excel
-// file's header row regardless of spacing/casing/language (English or the
-// Hindi labels used by the original report export both resolve the same).
+// file's header row regardless of spacing/casing/language. Bulk import only
+// covers the basic (flat) fields — officer activity history is added later
+// per-record in the Edit form since it's a repeating structure.
 const EXCEL_HEADER_MAP: Record<string, string> = {
   tokenno: 'token_no', token: 'token_no', 'टोकननंबर': 'token_no',
-  ownername: 'owner_name', name: 'owner_name', complainantname: 'owner_name', 'नाम': 'owner_name', 'शिकायतकर्तानाम': 'owner_name',
+  ownername: 'owner_name', name: 'owner_name', complainantname: 'owner_name', 'नाम': 'owner_name', 'शिकायतकर्तानाम': 'owner_name', 'शिकायतकर्तांकानाम': 'owner_name',
   complaintdate: 'complaint_date', date: 'complaint_date', 'शिकायतदिनांक': 'complaint_date',
-  department: 'department', 'विभाग': 'department',
+  department: 'department', 'विभाग': 'department', 'विभागकानाम': 'department',
   depthead: 'dept_head', departmenthead: 'dept_head', 'विभागाध्यक्ष': 'dept_head',
   category: 'category', 'शिकायतश्रेणी': 'category',
   topic: 'topic', subject: 'topic', 'विषय': 'topic',
   description: 'description', 'शिकायतविवरण': 'description',
   district: 'district', 'जिला': 'district',
+  block: 'block', 'विकासखण्ड': 'block', 'विकासखंड': 'block',
+  address: 'address', 'पता': 'address',
   loginuserid: 'login_user_id', loginid: 'login_user_id', 'लॉगिनयूज़रआईडी': 'login_user_id',
   officername: 'officer_name', 'अधिकारीनाम': 'officer_name',
   officerdesignation: 'officer_designation', 'अधिकारीपदनाम': 'officer_designation',
   officerlevel: 'officer_level', level: 'officer_level', 'अधिकारीस्तर': 'officer_level',
   status: 'status', 'स्थिति': 'status',
-  mobileno: 'mobile_no', mobile: 'mobile_no', 'नागरिकमोबाइल': 'mobile_no',
+  mobileno: 'mobile_no', mobile: 'mobile_no', 'नागरिकमोबाइल': 'mobile_no', 'मोबाइलनम्बर': 'mobile_no',
   resolveddate: 'resolved_date', transferdate: 'resolved_date', 'निराकरणदिनांक': 'resolved_date', 'मेंडदिनांक': 'resolved_date',
+  complainantdocuments: 'complainant_documents', 'शिकायतकर्ताद्वारासंलग्नदस्तावेज': 'complainant_documents',
   remarks: 'remarks', 'टिप्पणी': 'remarks',
 }
 const EXCEL_REQUIRED_FIELDS = ['token_no']
@@ -40,13 +44,20 @@ type ParsedComplaintRow = {
   topic?: string
   description: string
   district: string
+  block?: string
+  address?: string
   login_user_id: string
   officer_name: string
   officer_designation: string
   officer_level: string
   status: string
   mobile_no: string
+  complainant_documents?: string
   remarks?: string
+}
+
+const EMPTY_ACTIVITY: OfficerActivity = {
+  level: '', date: '', name: '', designation: '', mobile: '', resolution: '', status: '', documents: '',
 }
 
 const EMPTY_FORM = {
@@ -60,27 +71,25 @@ const EMPTY_FORM = {
   topic: '',
   description: '',
   district: 'धमतरी',
+  block: '',
+  address: '',
   login_user_id: '',
   officer_name: '',
   officer_designation: '',
   officer_level: '',
   status: 'Feedback Pending',
   mobile_no: '',
+  complainant_documents: '',
   remarks: '',
   file_link: '',
 }
 type FormType = typeof EMPTY_FORM
 
-// Common status values across both the original export format (English) and
-// the newer portal export format (Hindi), offered as suggestions only —
-// status is free text since new exports can introduce new labels.
 const STATUS_SUGGESTIONS = [
   'Feedback Pending', 'In Progress', 'Closed', 'Not Related',
   'प्रक्रियाधीन', 'निराकृत (फीडबैक लम्बित)', 'निराकृत (पॉजिटिव फीडबैक)',
 ]
 
-// Classifies by keyword since statuses arrive in either English or Hindi
-// depending on which export the data was bulk-imported from.
 function statusClasses(status: string) {
   const s = status || ''
   if (/निराकृत|Closed/i.test(s)) return 'text-green-700 bg-green-100'
@@ -90,7 +99,6 @@ function statusClasses(status: string) {
   return 'text-gray-600 bg-gray-100'
 }
 
-// Converts "DD-MM-YYYY" -> "YYYY-MM-DD"; passes through already-ISO or empty values
 function toISODate(str: string): string | null {
   const s = str.trim()
   if (!s) return null
@@ -110,7 +118,6 @@ type SortKey = keyof FormType | null
 
 type ColumnDef = { id: string; label: string; sortKey?: keyof FormType }
 
-// Order here drives both the table and the column-picker checklist.
 const COLUMNS: ColumnDef[] = [
   { id: 'token_no', label: 'टोकन नंबर', sortKey: 'token_no' },
   { id: 'complaint_date', label: 'दिनांक', sortKey: 'complaint_date' },
@@ -118,25 +125,33 @@ const COLUMNS: ColumnDef[] = [
   { id: 'topic', label: 'विषय (Topic)', sortKey: 'topic' },
   { id: 'description', label: 'विवरण' },
   { id: 'district', label: 'जिला', sortKey: 'district' },
+  { id: 'block', label: 'विकासखण्ड', sortKey: 'block' },
+  { id: 'address', label: 'पता' },
   { id: 'login_user_id', label: 'लॉगिन आईडी' },
   { id: 'officer', label: 'अधिकारी', sortKey: 'officer_name' },
   { id: 'officer_level', label: 'स्तर', sortKey: 'officer_level' },
   { id: 'status', label: 'स्थिति', sortKey: 'status' },
+  { id: 'activities', label: 'अधिकारी गतिविधि' },
   { id: 'resolved_date', label: 'निराकरण दिनांक', sortKey: 'resolved_date' },
   { id: 'owner_name', label: 'नाम (Owner)', sortKey: 'owner_name' },
   { id: 'mobile_no', label: 'मोबाइल', sortKey: 'mobile_no' },
+  { id: 'complainant_documents', label: 'शिकायतकर्ता दस्तावेज़' },
   { id: 'file_link', label: 'फ़ाइल' },
   { id: 'remarks', label: 'टिप्पणी (Remarks)' },
 ]
-const VISIBLE_COLS_STORAGE_KEY = 'complaints_visible_columns'
+const VISIBLE_COLS_STORAGE_KEY = 'complaints_v2_visible_columns'
 
-const CELL_RENDERERS: Record<string, (e: Complaint) => JSX.Element> = {
+type CellCtx = { onViewActivities: (e: ComplaintV2) => void }
+
+const CELL_RENDERERS: Record<string, (e: ComplaintV2, ctx: CellCtx) => JSX.Element> = {
   token_no: e => <td className="px-3 py-2 text-xs font-mono font-semibold text-blue-900 whitespace-nowrap">{e.token_no}</td>,
   complaint_date: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(e.complaint_date) || '—'}</td>,
   category: e => <td className="px-3 py-2 text-xs max-w-[220px] truncate" title={e.category}>{e.category}</td>,
   topic: e => <td className="px-3 py-2 text-xs max-w-[220px] truncate" title={e.topic}>{e.topic || '—'}</td>,
   description: e => <td className="px-3 py-2 text-xs max-w-[520px] whitespace-pre-line">{e.description}</td>,
   district: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.district}</td>,
+  block: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.block || '—'}</td>,
+  address: e => <td className="px-3 py-2 text-xs max-w-[220px] truncate" title={e.address}>{e.address || '—'}</td>,
   login_user_id: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.login_user_id || '—'}</td>,
   officer: e => (
     <td className="px-3 py-2 text-xs whitespace-nowrap">
@@ -149,9 +164,23 @@ const CELL_RENDERERS: Record<string, (e: Complaint) => JSX.Element> = {
       <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${statusClasses(e.status)}`}>{e.status}</span>
     </td>
   ),
+  activities: (e, ctx) => {
+    const count = e.officer_activities?.length || 0
+    return (
+      <td className="px-3 py-2 text-xs whitespace-nowrap">
+        <button
+          onClick={() => ctx.onViewActivities(e)}
+          className={`px-2 py-1 rounded text-xs font-medium ${count > 0 ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+        >
+          📋 देखें ({count})
+        </button>
+      </td>
+    )
+  },
   resolved_date: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(e.resolved_date) || '—'}</td>,
   owner_name: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.owner_name || '—'}</td>,
   mobile_no: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.mobile_no || '—'}</td>,
+  complainant_documents: e => <td className="px-3 py-2 text-xs max-w-[220px] truncate" title={e.complainant_documents}>{e.complainant_documents || '—'}</td>,
   file_link: e => (
     <td className="px-3 py-2 text-xs whitespace-nowrap">
       {e.file_link ? (
@@ -175,8 +204,8 @@ function downloadJSON(data: unknown, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-export default function ComplaintsPage() {
-  const [entries, setEntries] = useState<Complaint[]>([])
+export default function ComplaintsV2Page() {
+  const [entries, setEntries] = useState<ComplaintV2[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -203,11 +232,13 @@ export default function ComplaintsPage() {
   }, [visibleCols])
 
   const [showForm, setShowForm] = useState(false)
-  const [editEntry, setEditEntry] = useState<Complaint | null>(null)
+  const [editEntry, setEditEntry] = useState<ComplaintV2 | null>(null)
   const [form, setForm] = useState<FormType>(EMPTY_FORM)
+  const [activities, setActivities] = useState<OfficerActivity[]>([])
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [viewingActivities, setViewingActivities] = useState<ComplaintV2 | null>(null)
 
   const [showBulk, setShowBulk] = useState(false)
   const [bulkSource, setBulkSource] = useState<'paste' | 'excel'>('paste')
@@ -221,7 +252,7 @@ export default function ComplaintsPage() {
   const [deletingAll, setDeletingAll] = useState(false)
 
   const [pinAction, setPinAction] = useState<null
-    | { type: 'edit'; entry: Complaint }
+    | { type: 'edit'; entry: ComplaintV2 }
     | { type: 'delete'; id: number }
     | { type: 'deleteAll' }>(null)
 
@@ -229,9 +260,9 @@ export default function ComplaintsPage() {
 
   async function fetchEntries() {
     setLoading(true)
-    const { data, error } = await fetchAllRows<Complaint>('complaints', 'complaint_date', false)
+    const { data, error } = await fetchAllRows<ComplaintV2>('complaints_v2', 'complaint_date', false)
     if (error) showMsg('error', error.message)
-    else setEntries(data || [])
+    else setEntries((data || []).map(e => ({ ...e, officer_activities: e.officer_activities || [] })))
     setLoading(false)
   }
 
@@ -257,7 +288,7 @@ export default function ComplaintsPage() {
       if (dateTo && (!e.complaint_date || e.complaint_date > dateTo)) return false
       if (search.trim()) {
         const q = search.trim().toLowerCase()
-        const hay = Object.values(e).join(' ').toLowerCase()
+        const hay = Object.values(e).filter(v => typeof v === 'string').join(' ').toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true
@@ -278,7 +309,7 @@ export default function ComplaintsPage() {
     else { setSortKey(key); setSortAsc(true) }
   }
 
-  function requestEdit(entry: Complaint) { setPinAction({ type: 'edit', entry }) }
+  function requestEdit(entry: ComplaintV2) { setPinAction({ type: 'edit', entry }) }
   function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
   function requestDeleteAll() { setPinAction({ type: 'deleteAll' }) }
   function onPinSuccess() {
@@ -292,10 +323,11 @@ export default function ComplaintsPage() {
   function openAdd() {
     setEditEntry(null)
     setForm(EMPTY_FORM)
+    setActivities([])
     setShowForm(true)
   }
 
-  function openEdit(entry: Complaint) {
+  function openEdit(entry: ComplaintV2) {
     setEditEntry(entry)
     setForm({
       token_no: entry.token_no || '',
@@ -308,26 +340,45 @@ export default function ComplaintsPage() {
       topic: entry.topic || '',
       description: entry.description || '',
       district: entry.district || '',
+      block: entry.block || '',
+      address: entry.address || '',
       login_user_id: entry.login_user_id || '',
       officer_name: entry.officer_name || '',
       officer_designation: entry.officer_designation || '',
       officer_level: entry.officer_level || '',
       status: entry.status || 'Feedback Pending',
       mobile_no: entry.mobile_no || '',
+      complainant_documents: entry.complainant_documents || '',
       remarks: entry.remarks || '',
       file_link: entry.file_link || '',
     })
+    setActivities(entry.officer_activities || [])
     setShowForm(true)
+  }
+
+  function addActivity() {
+    setActivities(prev => [...prev, { ...EMPTY_ACTIVITY }])
+  }
+  function removeActivity(idx: number) {
+    setActivities(prev => prev.filter((_, i) => i !== idx))
+  }
+  function updateActivity(idx: number, field: keyof OfficerActivity, value: string) {
+    setActivities(prev => prev.map((a, i) => i === idx ? { ...a, [field]: value } : a))
   }
 
   async function handleSave() {
     setSaving(true)
-    const payload = { ...form, complaint_date: form.complaint_date || null, resolved_date: form.resolved_date || null }
+    const payload = {
+      ...form,
+      complaint_date: form.complaint_date || null,
+      resolved_date: form.resolved_date || null,
+      officer_activities: activities,
+    }
     let error: any
     if (editEntry?.id) {
-      ;({ error } = await supabase.from('complaints').update(payload).eq('id', editEntry.id))
+      ;({ error } = await supabase.from('complaints_v2').update(payload).eq('id', editEntry.id))
     } else {
-      ;({ error } = await supabase.from('complaints').insert(payload))
+      ;({ error } = await supabase.from('complaints_v2').insert(payload))
     }
     setSaving(false)
     if (error) showMsg('error', error.message)
@@ -339,7 +390,7 @@ export default function ComplaintsPage() {
   }
 
   async function handleDelete(id: number) {
-    const { error } = await supabase.from('complaints').delete().eq('id', id)
+    const { error } = await supabase.from('complaints_v2').delete().eq('id', id)
     setDeleteId(null)
     if (error) showMsg('error', error.message)
     else { showMsg('success', 'शिकायत हटाई गई।'); fetchEntries() }
@@ -347,19 +398,13 @@ export default function ComplaintsPage() {
 
   async function handleDeleteAll() {
     setDeletingAll(true)
-    const { error } = await supabase.from('complaints').delete().neq('id', 0)
+    const { error } = await supabase.from('complaints_v2').delete().neq('id', 0)
     setDeletingAll(false)
     setShowDeleteAll(false)
     if (error) showMsg('error', error.message)
     else { showMsg('success', 'सभी शिकायतें हटाई गईं।'); fetchEntries() }
   }
 
-  // Excel/portal exports often contain a literal line-break inside the
-  // description cell. Pasted as tab-separated text that turns one logical
-  // row into several physical lines, which breaks naive newline-splitting.
-  // A genuine row start has a token number (e.g. CC260700096707) in one of
-  // its first few tab-separated fields; any line without one is a
-  // continuation of the previous row's multi-line cell and gets re-joined.
   const TOKEN_RE = /^[A-Za-z]{1,4}\d{6,}$/
   function mergeBulkLines(text: string): string[] {
     const rawLines = text.split(/\r?\n/).filter(l => l.trim() !== '')
@@ -373,21 +418,15 @@ export default function ComplaintsPage() {
     return merged
   }
 
-  // Parses rows pasted from Excel/portal export (tab-separated). Auto-detects
-  // which of two known layouts the pasted data uses (strips an optional
-  // leading serial-number column from either):
-  //  - Original report export (11 cols): token, date, dept, deptHead, category,
-  //    desc, district, loginId, level, status, mobile
-  //  - Newer portal export (13 cols): dept, deptHead, district, token, date,
-  //    resolvedDate, category, desc, loginId, officerName, officerDesignation,
-  //    level, status
+  // Basic-fields-only paste import (same two layouts as v1). Officer
+  // activity history is added afterwards per-record via Edit.
   function parseBulkRows(text: string) {
     return mergeBulkLines(text)
       .map(l => l.trim())
       .filter(Boolean)
       .map(line => {
         let cols = line.split('\t')
-        if (cols.length === 1) cols = line.split(',') // fallback for comma-separated paste
+        if (cols.length === 1) cols = line.split(',')
         if (cols.length >= 12 && /^\d+$/.test(cols[0].trim())) cols = cols.slice(1)
         cols = cols.map(c => c.trim())
 
@@ -428,18 +467,19 @@ export default function ComplaintsPage() {
       topic: row.topic || '',
       description: row.description || '',
       district: row.district || '',
+      block: row.block || '',
+      address: row.address || '',
       login_user_id: row.login_user_id || '',
       officer_name: row.officer_name || '',
       officer_designation: row.officer_designation || '',
       officer_level: row.officer_level || '',
       status: row.status || 'Feedback Pending',
       mobile_no: row.mobile_no || '',
+      complainant_documents: row.complainant_documents || '',
       remarks: row.remarks || '',
     }
   }
 
-  // Shared by both the paste-textarea import and the Excel-file import —
-  // handles duplicate skip/replace and the actual insert either way.
   async function importRows(parsed: ParsedComplaintRow[]) {
     if (parsed.length === 0) { showMsg('error', 'कोई मान्य पंक्ति नहीं मिली।'); return }
 
@@ -449,9 +489,9 @@ export default function ComplaintsPage() {
     let toImport = parsed
 
     if (bulkMode === 'replace') {
-      await supabase.from('complaints').delete().neq('id', 0)
+      await supabase.from('complaints_v2').delete().neq('id', 0)
     } else {
-      const existing = await fetchAllColumnValues('complaints', 'token_no')
+      const existing = await fetchAllColumnValues('complaints_v2', 'token_no')
       const existingSet = new Set(existing.map(v => v?.toUpperCase()))
       const skipped = parsed.filter(r => existingSet.has(r.token_no.toUpperCase()))
       toImport = parsed.filter(r => !existingSet.has(r.token_no.toUpperCase()))
@@ -466,7 +506,7 @@ export default function ComplaintsPage() {
       return
     }
 
-    const { error } = await supabase.from('complaints').insert(toImport)
+    const { error } = await supabase.from('complaints_v2').insert(toImport.map(r => ({ ...r, officer_activities: [] })))
     setBulkSaving(false)
     if (error) showMsg('error', error.message)
     else {
@@ -498,23 +538,12 @@ export default function ComplaintsPage() {
     await importRows(parsed)
   }
 
-  function openReportView() {
-    const rows = filtered.map((e, i) => [
-      String(i + 1), e.token_no, fromISODate(e.complaint_date), fromISODate(e.resolved_date), e.department, e.dept_head,
-      e.category, e.description, e.district, e.login_user_id, e.officer_name, e.officer_designation,
-      e.officer_level, e.status, e.mobile_no, e.remarks,
-    ])
-    const html = buildReportHTML(rows)
-    const w = window.open('', '_blank')
-    if (w) { w.document.write(html); w.document.close() }
-  }
-
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full px-4 py-6">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-blue-900">शिकायत निवारण (Complaints)</h1>
+            <h1 className="text-2xl font-bold text-blue-900">शिकायत निवारण v2 (Complaints v2)</h1>
             <p className="text-sm text-gray-500 mt-0.5">Total: {filtered.length} entries</p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -524,11 +553,8 @@ export default function ComplaintsPage() {
             <button onClick={() => setShowBulk(true)} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
               📥 Bulk Import
             </button>
-            <button onClick={() => downloadJSON(entries, `complaints_v1_backup_${new Date().toISOString().slice(0, 10)}.json`)} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
+            <button onClick={() => downloadJSON(entries, `complaints_v2_backup_${new Date().toISOString().slice(0, 10)}.json`)} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
               📦 JSON Backup
-            </button>
-            <button onClick={openReportView} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
-              🖨 Report View / Print
             </button>
             <div className="relative">
               <button onClick={() => setShowColPicker(v => !v)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition">
@@ -588,7 +614,7 @@ export default function ComplaintsPage() {
         <div className="flex flex-wrap gap-2 mb-4">
           <input
             type="text"
-            placeholder="खोजें... (नाम, वाहन नंबर, टोकन, मोबाइल आदि)"
+            placeholder="खोजें... (नाम, टोकन, मोबाइल आदि)"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[220px] focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -603,21 +629,11 @@ export default function ComplaintsPage() {
           </select>
           <div className="flex items-center gap-1.5 border border-gray-300 rounded-lg px-2 py-1 bg-white">
             <span className="text-xs text-gray-500 whitespace-nowrap">दिनांक से</span>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              className="text-sm focus:outline-none"
-            />
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="text-sm focus:outline-none" />
           </div>
           <div className="flex items-center gap-1.5 border border-gray-300 rounded-lg px-2 py-1 bg-white">
             <span className="text-xs text-gray-500 whitespace-nowrap">तक</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
-              className="text-sm focus:outline-none"
-            />
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="text-sm focus:outline-none" />
           </div>
           {(search || statusFilter || levelFilter || dateFrom || dateTo) && (
             <button onClick={() => { setSearch(''); setStatusFilter(''); setLevelFilter(''); setDateFrom(''); setDateTo('') }} className="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Reset</button>
@@ -651,7 +667,7 @@ export default function ComplaintsPage() {
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{entries.findIndex(e => e.id === entry.id) + 1}</td>
                     {COLUMNS.filter(col => visibleCols[col.id] !== false).map(col => (
-                      <Fragment key={col.id}>{CELL_RENDERERS[col.id](entry)}</Fragment>
+                      <Fragment key={col.id}>{CELL_RENDERERS[col.id](entry, { onViewActivities: setViewingActivities })}</Fragment>
                     ))}
                     <td className="px-3 py-2 text-xs">
                       <div className="flex gap-1">
@@ -670,7 +686,7 @@ export default function ComplaintsPage() {
       {/* Add/Edit Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center overflow-y-auto py-8">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 p-6">
             <h2 className="text-lg font-bold text-blue-900 mb-5">{editEntry ? 'शिकायत संपादित करें' : 'नई शिकायत जोड़ें'}</h2>
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -737,13 +753,13 @@ export default function ComplaintsPage() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">लॉगिन यूज़र आईडी</label>
-                  <input type="text" value={form.login_user_id} onChange={e => setForm(f => ({ ...f, login_user_id: e.target.value }))}
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">विकासखण्ड</label>
+                  <input type="text" value={form.block} onChange={e => setForm(f => ({ ...f, block: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">अधिकारी स्तर</label>
-                  <input type="text" value={form.officer_level} onChange={e => setForm(f => ({ ...f, officer_level: e.target.value }))}
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">लॉगिन यूज़र आईडी</label>
+                  <input type="text" value={form.login_user_id} onChange={e => setForm(f => ({ ...f, login_user_id: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
                 <div>
@@ -751,6 +767,12 @@ export default function ComplaintsPage() {
                   <input type="text" value={form.mobile_no} onChange={e => setForm(f => ({ ...f, mobile_no: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">पता (Area / District / Block / GP / Village)</label>
+                <input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -765,10 +787,17 @@ export default function ComplaintsPage() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">निराकरण दिनांक (मेंड दिनांक)</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">निराकरण दिनांक</label>
                   <input type="date" value={form.resolved_date} onChange={e => setForm(f => ({ ...f, resolved_date: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">शिकायतकर्ता द्वारा संलग्न दस्तावेज़</label>
+                <input type="text" value={form.complainant_documents} onChange={e => setForm(f => ({ ...f, complainant_documents: e.target.value }))}
+                  placeholder="फ़ाइल नाम या लिंक"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
               </div>
 
               <div>
@@ -782,7 +811,73 @@ export default function ComplaintsPage() {
                 <input type="url" value={form.file_link} onChange={e => setForm(f => ({ ...f, file_link: e.target.value }))}
                   placeholder="https://t.me/c/..."
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300" />
-                <p className="text-xs text-gray-400 mt-1">Telegram में फ़ाइल/मैसेज पर राइट-क्लिक (या लॉन्ग-प्रेस) करें → "Copy Message Link" → यहाँ पेस्ट करें।</p>
+              </div>
+
+              {/* Officer Activity Log */}
+              <div className="border-t border-gray-200 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-bold text-gray-700">अधिकारी गतिविधि (Officer Activity Log)</label>
+                  <button type="button" onClick={addActivity} className="px-3 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 text-xs font-medium">
+                    + Add Activity Level
+                  </button>
+                </div>
+                {activities.length === 0 && (
+                  <p className="text-xs text-gray-400">कोई गतिविधि नहीं जोड़ी गई। "+ Add Activity Level" से जोड़ें।</p>
+                )}
+                <div className="space-y-4">
+                  {activities.map((act, idx) => (
+                    <div key={idx} className="border border-gray-200 rounded-lg p-3 bg-gray-50 relative">
+                      <button type="button" onClick={() => removeActivity(idx)}
+                        className="absolute top-2 right-2 text-xs px-2 py-0.5 rounded bg-red-100 text-red-700 hover:bg-red-200">Remove</button>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">स्तर (Level)</label>
+                          <input type="text" value={act.level} onChange={e => updateActivity(idx, 'level', e.target.value)}
+                            placeholder="L1, L2..."
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">दिनांक</label>
+                          <input type="date" value={act.date} onChange={e => updateActivity(idx, 'date', e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">नाम</label>
+                          <input type="text" value={act.name} onChange={e => updateActivity(idx, 'name', e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">पदनाम</label>
+                          <input type="text" value={act.designation} onChange={e => updateActivity(idx, 'designation', e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">मोबाइल</label>
+                          <input type="text" value={act.mobile} onChange={e => updateActivity(idx, 'mobile', e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">शिकायत की स्थिति</label>
+                          <input list="status-suggestions" type="text" value={act.status} onChange={e => updateActivity(idx, 'status', e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                        </div>
+                      </div>
+                      <div className="mb-3">
+                        <label className="block text-[11px] font-semibold text-gray-500 mb-1">अधिकारी समाधान</label>
+                        <textarea value={act.resolution} onChange={e => updateActivity(idx, 'resolution', e.target.value)} rows={3}
+                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-gray-500 mb-1">अधिकारी द्वारा संलग्न दस्तावेज़</label>
+                        <input type="text" value={act.documents} onChange={e => updateActivity(idx, 'documents', e.target.value)}
+                          placeholder="फ़ाइल नाम (कॉमा से अलग करें)"
+                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -796,11 +891,55 @@ export default function ComplaintsPage() {
         </div>
       )}
 
+      {/* Read-only Activity Timeline Modal */}
+      {viewingActivities && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center overflow-y-auto py-8">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-blue-900">अधिकारी गतिविधि</h2>
+                <p className="text-xs text-gray-500 mt-0.5">टोकन: {viewingActivities.token_no}</p>
+              </div>
+              <button onClick={() => setViewingActivities(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+            {(!viewingActivities.officer_activities || viewingActivities.officer_activities.length === 0) ? (
+              <p className="text-sm text-gray-400 py-8 text-center">कोई गतिविधि दर्ज नहीं है।</p>
+            ) : (
+              <div className="space-y-4">
+                {[...viewingActivities.officer_activities].reverse().map((act, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="bg-blue-50 px-3 py-2 text-sm font-bold text-blue-900">
+                      {act.level || '—'} {act.date && `(${fromISODate(act.date)})`}
+                    </div>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        <tr className="border-t border-gray-100"><td className="px-3 py-2 font-semibold text-gray-500 w-1/3 align-top">स्तर</td><td className="px-3 py-2">{act.level || '—'}</td></tr>
+                        <tr className="border-t border-gray-100"><td className="px-3 py-2 font-semibold text-gray-500 align-top">नाम</td><td className="px-3 py-2">{act.name || '—'}</td></tr>
+                        <tr className="border-t border-gray-100"><td className="px-3 py-2 font-semibold text-gray-500 align-top">पदनाम</td><td className="px-3 py-2">{act.designation || '—'}</td></tr>
+                        <tr className="border-t border-gray-100"><td className="px-3 py-2 font-semibold text-gray-500 align-top">मोबाइल</td><td className="px-3 py-2">{act.mobile || '—'}</td></tr>
+                        <tr className="border-t border-gray-100"><td className="px-3 py-2 font-semibold text-gray-500 align-top">अधिकारी समाधान</td><td className="px-3 py-2 whitespace-pre-line">{act.resolution || '—'}</td></tr>
+                        <tr className="border-t border-gray-100"><td className="px-3 py-2 font-semibold text-gray-500 align-top">शिकायत की स्थिति</td><td className="px-3 py-2">
+                          <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${statusClasses(act.status)}`}>{act.status || '—'}</span>
+                        </td></tr>
+                        <tr className="border-t border-gray-100"><td className="px-3 py-2 font-semibold text-gray-500 align-top">अधिकारी द्वारा संलग्न दस्तावेज़</td><td className="px-3 py-2">{act.documents || '—'}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-6">
+              <button onClick={() => setViewingActivities(null)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition">बंद करें</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bulk Import Modal */}
       {showBulk && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center overflow-y-auto py-8">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6">
-            <h2 className="text-lg font-bold text-blue-900 mb-2">Bulk Import Complaints</h2>
+            <h2 className="text-lg font-bold text-blue-900 mb-2">Bulk Import Complaints v2</h2>
 
             <div className="flex gap-2 mb-4 border-b border-gray-200">
               <button
@@ -819,13 +958,13 @@ export default function ComplaintsPage() {
 
             {bulkSource === 'paste' ? (
               <p className="text-sm text-gray-500 mb-4">
-                Excel से पंक्तियाँ कॉपी-पेस्ट करें (Tab-separated) — दोनों फॉर्मेट अपने आप पहचाने जाते हैं, क्रमांक कॉलम अपने आप हट जाएगा:
+                Excel से पंक्तियाँ कॉपी-पेस्ट करें (Tab-separated) — केवल मूल fields इम्पोर्ट होंगे, अधिकारी गतिविधि हर रिकॉर्ड में बाद में Edit से जोड़ें:
                 <br />• पुराना फॉर्मेट: टोकन, दिनांक, विभाग, विभागाध्यक्ष, श्रेणी, विवरण, जिला, लॉगिन आईडी, स्तर, स्थिति, मोबाइल
                 <br />• नया फॉर्मेट: विभाग, विभागाध्यक्ष, जिला, टोकन, दिनांक, मेंड दिनांक, श्रेणी, विवरण, लॉगिन आईडी, अधिकारी नाम, अधिकारी पदनाम, स्तर, स्थिति
               </p>
             ) : (
               <p className="text-sm text-gray-500 mb-4">
-                .xlsx/.xls फ़ाइल सीधे अपलोड करें। हेडर रो में ये कॉलम नाम पहचाने जाते हैं (कोई भी क्रम में, हिंदी या अंग्रेज़ी): Token No, Complaint Date, Department, Dept Head, Category, Description, District, Login User Id, Officer Name, Officer Designation, Officer Level, Status, Mobile No, Resolved Date, Remarks। सिर्फ <strong>Token No</strong> ज़रूरी है — अगर वो कॉलम नहीं मिला तो पूरा इम्पोर्ट रुक जाएगा। बाकी अनजान कॉलम अपने आप नज़रअंदाज़ हो जाते हैं।
+                .xlsx/.xls फ़ाइल सीधे अपलोड करें — मूल fields (Token No, Owner Name, Category, Topic, District, Block, Address, Mobile No, Status, आदि) पहचाने जाते हैं। सिर्फ <strong>Token No</strong> ज़रूरी है। अधिकारी गतिविधि इस अपलोड में शामिल नहीं है — हर रिकॉर्ड में बाद में Edit से जोड़ें।
               </p>
             )}
 
@@ -942,100 +1081,4 @@ export default function ComplaintsPage() {
       )}
     </div>
   )
-}
-
-// Builds the standalone, printable report page (same design as the original
-// cm17072026.xlsx report) populated with the currently filtered rows.
-function buildReportHTML(rows: string[][]): string {
-  const rowsJson = JSON.stringify(rows)
-  return `<!DOCTYPE html>
-<html lang="hi">
-<head>
-<meta charset="UTF-8">
-<title>शिकायत रिपोर्ट (Complaint Report) - धमतरी परिवहन विभाग</title>
-<style>
-  :root{--ink:#1b2430;--muted:#5b6673;--line:#dfe4ea;--bg:#f4f6f9;--card:#ffffff;--accent:#0b5fa5;--accent-dark:#083f6e;
-    --pending:#b45309;--pending-bg:#fef3c7;--progress:#1d4ed8;--progress-bg:#dbeafe;--closed:#15803d;--closed-bg:#dcfce7;--notrelated:#6b7280;--notrelated-bg:#f3f4f6;}
-  *{box-sizing:border-box;}
-  body{margin:0;font-family:"Noto Sans Devanagari","Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45;}
-  .toolbar{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--line);padding:14px 20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,.04);}
-  .toolbar button{padding:9px 16px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;}
-  .toolbar button:hover{background:var(--accent-dark);}
-  .container{max-width:100%;margin:0 auto;padding:20px 20px 60px;}
-  header.title-block{text-align:center;margin-bottom:16px;}
-  header.title-block h1{margin:0 0 4px;font-size:21px;color:var(--accent-dark);}
-  header.title-block .sub{color:var(--muted);font-size:13px;}
-  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:16px 0 18px;max-width:1300px;margin-left:auto;margin-right:auto;}
-  .stat-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 8px;text-align:center;}
-  .stat-card .n{font-size:20px;font-weight:700;color:var(--accent-dark);}
-  .stat-card .l{font-size:11.5px;color:var(--muted);margin-top:2px;}
-  .table-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;}
-  table{border-collapse:collapse;width:100%;min-width:1500px;font-size:12.8px;}
-  thead th{position:sticky;top:0;background:var(--accent-dark);color:#fff;text-align:right;padding:10px 10px;font-weight:600;font-size:12.5px;white-space:nowrap;border-right:1px solid rgba(255,255,255,.15);}
-  tbody td{padding:9px 10px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);vertical-align:top;text-align:right;}
-  tbody tr:nth-child(even){background:#fafbfc;}
-  td.col-idx{text-align:center;font-weight:700;color:var(--accent-dark);width:44px;}
-  td.col-token{font-weight:600;white-space:nowrap;}
-  td.col-date{white-space:nowrap;text-align:center;}
-  td.col-desc{max-width:420px;white-space:pre-line;text-align:right;line-height:1.55;}
-  td.col-mobile{text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums;}
-  td.col-level{text-align:center;}
-  .status-badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;}
-  .status-Feedback-Pending{color:var(--pending);background:var(--pending-bg);}
-  .status-In-Progress{color:var(--progress);background:var(--progress-bg);}
-  .status-Closed{color:var(--closed);background:var(--closed-bg);}
-  .status-Not-Related{color:var(--notrelated);background:var(--notrelated-bg);}
-  footer{text-align:center;color:var(--muted);font-size:12px;margin-top:20px;}
-  @media print{
-    body{background:#fff;}
-    .toolbar{display:none !important;}
-    .container{max-width:100%;padding:0;}
-    table{min-width:100%;font-size:9.5px;}
-    thead th{position:static;background:#e5e9ee !important;color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1px solid #999;}
-    tbody td{border:1px solid #ccc;}
-    tbody tr{page-break-inside:avoid;break-inside:avoid;}
-    .status-badge{-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1px solid currentColor;}
-    td.col-desc{max-width:220px;}
-  }
-  @media print{ .stats{grid-template-columns:repeat(auto-fit,minmax(100px,1fr));} }
-  @page{size:A3 landscape;margin:10mm;}
-</style>
-</head>
-<body>
-<div class="toolbar"><button onclick="window.print()">🖨 Print / PDF</button></div>
-<div class="container">
-  <header class="title-block">
-    <h1>शिकायत निवारण रिपोर्ट — परिवहन विभाग, धमतरी</h1>
-    <div class="sub" id="genSub"></div>
-  </header>
-  <div class="stats" id="statsRow"></div>
-  <div class="table-wrap">
-    <table><thead><tr id="headRow"></tr></thead><tbody id="tbody"></tbody></table>
-  </div>
-  <footer>Total <span id="footTotal"></span> records</footer>
-</div>
-<script>
-const HEADERS = ["क्रमांक","टोकन नंबर","शिकायत दिनांक","निराकरण दिनांक","विभाग","विभागाध्यक्ष","शिकायत श्रेणी","शिकायत विवरण","जिला","लॉगिन यूज़र आईडी","अधिकारी नाम","अधिकारी पदनाम","अधिकारी स्तर","स्थिति","नागरिक मोबाइल","टिप्पणी (Remarks)"];
-const ROWS = ${rowsJson};
-function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function statusClass(s){return "status-"+(s||"Unknown").replace(/\\s+/g,'-');}
-document.getElementById('headRow').innerHTML = HEADERS.map(h=>'<th>'+esc(h)+'</th>').join('');
-document.getElementById('tbody').innerHTML = ROWS.map(r=>
-  '<tr><td class="col-idx">'+esc(r[0])+'</td><td class="col-token">'+esc(r[1])+'</td><td class="col-date">'+esc(r[2])+'</td><td class="col-date">'+esc(r[3]||'—')+'</td>'+
-  '<td>'+esc(r[4])+'</td><td>'+esc(r[5])+'</td><td>'+esc(r[6])+'</td><td class="col-desc">'+esc(r[7])+'</td>'+
-  '<td>'+esc(r[8])+'</td><td>'+esc(r[9]||'—')+'</td><td>'+esc(r[10]||'—')+'</td><td>'+esc(r[11]||'—')+'</td><td class="col-level">'+esc(r[12])+'</td>'+
-  '<td><span class="status-badge '+statusClass(r[13])+'">'+esc(r[13]||'Unknown')+'</span></td><td class="col-mobile">'+esc(r[14]||'—')+'</td>'+
-  '<td class="col-desc">'+esc(r[15]||'—')+'</td></tr>'
-).join('');
-const counts = {};
-ROWS.forEach(r=>{const s=r[13]||'Unknown';counts[s]=(counts[s]||0)+1;});
-const order=Object.keys(counts);
-let sh='<div class="stat-card"><div class="n">'+ROWS.length+'</div><div class="l">कुल शिकायतें</div></div>';
-order.forEach(s=>{sh+='<div class="stat-card"><div class="n">'+(counts[s]||0)+'</div><div class="l">'+s+'</div></div>';});
-document.getElementById('statsRow').innerHTML = sh;
-document.getElementById('footTotal').textContent = ROWS.length;
-document.getElementById('genSub').textContent = 'Total records: '+ROWS.length+'  ·  Generated '+new Date().toLocaleDateString('en-IN',{year:'numeric',month:'long',day:'numeric'});
-</script>
-</body>
-</html>`
 }

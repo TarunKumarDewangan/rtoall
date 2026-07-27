@@ -162,6 +162,44 @@ export type Complaint = {
   created_at?: string
 }
 
+export type OfficerActivity = {
+  level: string
+  date: string
+  name: string
+  designation: string
+  mobile: string
+  resolution: string
+  status: string
+  documents: string
+}
+
+export type ComplaintV2 = {
+  id?: number
+  token_no: string
+  owner_name: string
+  complaint_date: string | null
+  resolved_date: string | null
+  department: string
+  dept_head: string
+  category: string
+  topic: string
+  description: string
+  district: string
+  block: string
+  address: string
+  login_user_id: string
+  officer_name: string
+  officer_designation: string
+  officer_level: string
+  status: string
+  mobile_no: string
+  complainant_documents: string
+  officer_activities: OfficerActivity[]
+  remarks: string
+  file_link: string
+  created_at?: string
+}
+
 export type SubsidyStatus = {
   id?: number
   vehicle_no: string

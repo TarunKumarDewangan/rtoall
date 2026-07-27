@@ -16,7 +16,13 @@ const navItems: NavItem[] = [
     ],
   },
   { href: '/backlog-received', label: 'File IN/Out' },
-  { href: '/complaints', label: 'शिकायत' },
+  {
+    label: 'शिकायत',
+    children: [
+      { href: '/complaints', label: 'शिकायत v1' },
+      { href: '/complaints-v2', label: 'शिकायत v2' },
+    ],
+  },
   {
     label: 'EV Subsidy',
     children: [

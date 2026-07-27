@@ -137,6 +137,36 @@ CREATE TABLE IF NOT EXISTS complaints (
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255);
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS topic VARCHAR(255);
 
+-- 8b. Complaints v2 (शिकायत v2) — same as Complaints plus block/address/
+-- complainant documents, and a per-level officer activity log (L1, L2, ...)
+-- stored as a JSONB array: [{level,date,name,designation,mobile,resolution,status,documents}, ...]
+CREATE TABLE IF NOT EXISTS complaints_v2 (
+  id SERIAL PRIMARY KEY,
+  token_no VARCHAR(50),
+  owner_name VARCHAR(255),
+  complaint_date DATE,
+  resolved_date DATE,
+  department VARCHAR(255),
+  dept_head VARCHAR(255),
+  category TEXT,
+  topic VARCHAR(255),
+  description TEXT,
+  district VARCHAR(100),
+  block VARCHAR(150),
+  address TEXT,
+  login_user_id VARCHAR(100),
+  officer_name VARCHAR(255),
+  officer_designation VARCHAR(255),
+  officer_level VARCHAR(20),
+  status VARCHAR(50) DEFAULT 'Feedback Pending',
+  mobile_no VARCHAR(20),
+  complainant_documents TEXT,
+  officer_activities JSONB DEFAULT '[]'::jsonb,
+  remarks TEXT,
+  file_link TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- 9. EV Subsidy Status (disbursement tracking, separate from Subsidy Entries' document checklist)
 CREATE TABLE IF NOT EXISTS subsidy_status (
   id SERIAL PRIMARY KEY,
@@ -182,6 +212,7 @@ CREATE POLICY "Allow all" ON subsidy_entries FOR ALL USING (true) WITH CHECK (tr
 CREATE POLICY "Allow all" ON work_done_registry FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON complaints FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON subsidy_status FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON complaints_v2 FOR ALL USING (true) WITH CHECK (true);
 
 -- Enable RLS on all tables
 ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
@@ -193,3 +224,4 @@ ALTER TABLE subsidy_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE work_done_registry ENABLE ROW LEVEL SECURITY;
 ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subsidy_status ENABLE ROW LEVEL SECURITY;
+ALTER TABLE complaints_v2 ENABLE ROW LEVEL SECURITY;
