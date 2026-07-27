@@ -148,6 +148,7 @@ export type Complaint = {
   department: string
   dept_head: string
   category: string
+  topic: string
   description: string
   district: string
   login_user_id: string

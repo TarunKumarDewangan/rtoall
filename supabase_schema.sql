@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS complaints (
   department VARCHAR(255),
   dept_head VARCHAR(255),
   category TEXT,
+  topic VARCHAR(255),
   description TEXT,
   district VARCHAR(100),
   login_user_id VARCHAR(100),
@@ -134,6 +135,7 @@ CREATE TABLE IF NOT EXISTS complaints (
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS remarks TEXT;
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS file_link TEXT;
 -- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255);
+-- ALTER TABLE complaints ADD COLUMN IF NOT EXISTS topic VARCHAR(255);
 
 -- 9. EV Subsidy Status (disbursement tracking, separate from Subsidy Entries' document checklist)
 CREATE TABLE IF NOT EXISTS subsidy_status (

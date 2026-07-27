@@ -15,6 +15,7 @@ const EXCEL_HEADER_MAP: Record<string, string> = {
   department: 'department', 'विभाग': 'department',
   depthead: 'dept_head', departmenthead: 'dept_head', 'विभागाध्यक्ष': 'dept_head',
   category: 'category', 'शिकायतश्रेणी': 'category',
+  topic: 'topic', subject: 'topic', 'विषय': 'topic',
   description: 'description', 'शिकायतविवरण': 'description',
   district: 'district', 'जिला': 'district',
   loginuserid: 'login_user_id', loginid: 'login_user_id', 'लॉगिनयूज़रआईडी': 'login_user_id',
@@ -36,6 +37,7 @@ type ParsedComplaintRow = {
   department: string
   dept_head: string
   category: string
+  topic?: string
   description: string
   district: string
   login_user_id: string
@@ -55,6 +57,7 @@ const EMPTY_FORM = {
   department: 'परिवहन विभाग',
   dept_head: 'कार्यालय, परिवहन आयुक्त (परिवहन विभाग)',
   category: '',
+  topic: '',
   description: '',
   district: 'धमतरी',
   login_user_id: '',
@@ -112,6 +115,7 @@ const COLUMNS: ColumnDef[] = [
   { id: 'token_no', label: 'टोकन नंबर', sortKey: 'token_no' },
   { id: 'complaint_date', label: 'दिनांक', sortKey: 'complaint_date' },
   { id: 'category', label: 'श्रेणी' },
+  { id: 'topic', label: 'विषय (Topic)', sortKey: 'topic' },
   { id: 'description', label: 'विवरण' },
   { id: 'district', label: 'जिला', sortKey: 'district' },
   { id: 'login_user_id', label: 'लॉगिन आईडी' },
@@ -130,6 +134,7 @@ const CELL_RENDERERS: Record<string, (e: Complaint) => JSX.Element> = {
   token_no: e => <td className="px-3 py-2 text-xs font-mono font-semibold text-blue-900 whitespace-nowrap">{e.token_no}</td>,
   complaint_date: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(e.complaint_date) || '—'}</td>,
   category: e => <td className="px-3 py-2 text-xs max-w-[220px] truncate" title={e.category}>{e.category}</td>,
+  topic: e => <td className="px-3 py-2 text-xs max-w-[220px] truncate" title={e.topic}>{e.topic || '—'}</td>,
   description: e => <td className="px-3 py-2 text-xs max-w-[520px] whitespace-pre-line">{e.description}</td>,
   district: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.district}</td>,
   login_user_id: e => <td className="px-3 py-2 text-xs whitespace-nowrap">{e.login_user_id || '—'}</td>,
@@ -290,6 +295,7 @@ export default function ComplaintsPage() {
       department: entry.department || '',
       dept_head: entry.dept_head || '',
       category: entry.category || '',
+      topic: entry.topic || '',
       description: entry.description || '',
       district: entry.district || '',
       login_user_id: entry.login_user_id || '',
@@ -409,6 +415,7 @@ export default function ComplaintsPage() {
       department: row.department || '',
       dept_head: row.dept_head || '',
       category: row.category || '',
+      topic: row.topic || '',
       description: row.description || '',
       district: row.district || '',
       login_user_id: row.login_user_id || '',
@@ -695,6 +702,12 @@ export default function ComplaintsPage() {
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">शिकायत श्रेणी</label>
                 <input type="text" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">विषय (Topic)</label>
+                <input type="text" value={form.topic} onChange={e => setForm(f => ({ ...f, topic: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
               </div>
 
