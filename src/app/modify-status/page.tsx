@@ -14,6 +14,7 @@ const EMPTY_FORM = {
   send_date: '',
   status: 'Pending',
   remarks: '',
+  file_link: '',
 }
 type FormType = typeof EMPTY_FORM
 
@@ -57,6 +58,7 @@ const EXCEL_HEADER_MAP: Record<string, string> = {
   senddate: 'send_date', sentdate: 'send_date',
   status: 'status',
   remarks: 'remarks',
+  filelink: 'file_link', link: 'file_link',
 }
 const EXCEL_REQUIRED_FIELDS = ['vehicle_no']
 
@@ -152,6 +154,7 @@ export default function ModifyStatusPage() {
       send_date: entry.send_date || '',
       status: entry.status || 'Pending',
       remarks: entry.remarks || '',
+      file_link: entry.file_link || '',
     })
     setShowForm(true)
   }
@@ -230,6 +233,7 @@ export default function ModifyStatusPage() {
       send_date: toISODate(row.send_date || ''),
       status: row.status || 'Pending',
       remarks: row.remarks || '',
+      file_link: row.file_link || '',
     }
   }
 
@@ -375,14 +379,14 @@ export default function ModifyStatusPage() {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="bg-blue-900 text-white">
-                  {['#', 'Vehicle No', 'Mobile No', 'Correction Type', 'Letter No', 'Date', 'Send Date', 'Status', 'Remarks', 'Actions'].map(h => (
+                  {['#', 'Vehicle No', 'Mobile No', 'Correction Type', 'Letter No', 'Date', 'Send Date', 'Status', 'Remarks', 'File', 'Actions'].map(h => (
                     <th key={h} className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={10} className="text-center py-10 text-gray-400">No entries found</td></tr>
+                  <tr><td colSpan={11} className="text-center py-10 text-gray-400">No entries found</td></tr>
                 ) : filtered.map((entry, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{entries.findIndex(e => e.id === entry.id) + 1}</td>
@@ -396,6 +400,14 @@ export default function ModifyStatusPage() {
                       <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${statusClasses(entry.status)}`}>{entry.status}</span>
                     </td>
                     <td className="px-3 py-2 text-xs max-w-[220px] whitespace-pre-line">{entry.remarks || '—'}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">
+                      {entry.file_link ? (
+                        <a href={entry.file_link} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-sky-100 text-sky-700 hover:bg-sky-200 text-xs font-medium">
+                          📎 Open
+                        </a>
+                      ) : '—'}
+                    </td>
                     <td className="px-3 py-2 text-xs no-print">
                       <div className="flex gap-1">
                         <button onClick={() => requestEdit(entry)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
@@ -470,6 +482,14 @@ export default function ModifyStatusPage() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Remarks</label>
                 <textarea value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">फ़ाइल लिंक (Telegram)</label>
+                <input type="url" value={form.file_link} onChange={e => setForm(f => ({ ...f, file_link: e.target.value }))}
+                  placeholder="https://t.me/c/..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                <p className="text-xs text-gray-400 mt-1">Telegram में फ़ाइल/मैसेज पर राइट-क्लिक (या लॉन्ग-प्रेस) करें → "Copy Message Link" → यहाँ पेस्ट करें।</p>
               </div>
             </div>
 

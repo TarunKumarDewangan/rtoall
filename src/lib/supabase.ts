@@ -228,5 +228,6 @@ export type ModifyStatus = {
   send_date: string | null
   status: string
   remarks: string
+  file_link: string
   created_at?: string
 }

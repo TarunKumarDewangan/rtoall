@@ -210,8 +210,12 @@ CREATE TABLE IF NOT EXISTS modify_status (
   send_date DATE,
   status VARCHAR(50) DEFAULT 'Pending',
   remarks TEXT,
+  file_link TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- If modify_status already exists from an earlier version, run this to add the new column:
+-- ALTER TABLE modify_status ADD COLUMN IF NOT EXISTS file_link TEXT;
 
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
