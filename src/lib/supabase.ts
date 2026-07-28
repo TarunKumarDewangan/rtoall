@@ -217,3 +217,16 @@ export type SubsidyStatus = {
   remarks: string
   created_at?: string
 }
+
+export type ModifyStatus = {
+  id?: number
+  vehicle_no: string
+  mobile_no: string
+  correction_type: string
+  letter_no: string
+  letter_date: string | null
+  send_date: string | null
+  status: string
+  remarks: string
+  created_at?: string
+}

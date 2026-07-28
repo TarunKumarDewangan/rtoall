@@ -198,6 +198,21 @@ CREATE TABLE IF NOT EXISTS subsidy_status (
 -- ALTER TABLE subsidy_status ADD COLUMN IF NOT EXISTS registration_year VARCHAR(10);
 -- ALTER TABLE subsidy_status ADD COLUMN IF NOT EXISTS remarks TEXT;
 
+-- 10. Modify Status (वाहन संशोधन स्थिति — tracks correction requests per vehicle,
+-- separate from Modify Letters which groups vehicles under a single letter)
+CREATE TABLE IF NOT EXISTS modify_status (
+  id SERIAL PRIMARY KEY,
+  vehicle_no VARCHAR(50),
+  mobile_no VARCHAR(20),
+  correction_type VARCHAR(255),
+  letter_no VARCHAR(100),
+  letter_date DATE,
+  send_date DATE,
+  status VARCHAR(50) DEFAULT 'Pending',
+  remarks TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
 
@@ -213,6 +228,7 @@ CREATE POLICY "Allow all" ON work_done_registry FOR ALL USING (true) WITH CHECK 
 CREATE POLICY "Allow all" ON complaints FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON subsidy_status FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON complaints_v2 FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON modify_status FOR ALL USING (true) WITH CHECK (true);
 
 -- Enable RLS on all tables
 ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
@@ -225,3 +241,4 @@ ALTER TABLE work_done_registry ENABLE ROW LEVEL SECURITY;
 ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subsidy_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE complaints_v2 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE modify_status ENABLE ROW LEVEL SECURITY;

@@ -31,11 +31,17 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    label: 'Modify',
+    children: [
+      { href: '/modify-letters', label: 'Modify Letters' },
+      { href: '/modify-status', label: 'Modify Status' },
+    ],
+  },
+  {
     label: 'OfficeOW',
     children: [
       { href: '/work-done', label: 'Work Done' },
       { href: '/notesheets', label: 'Notesheets' },
-      { href: '/modify-letters', label: 'Modify Letters' },
     ],
   },
   { href: '/import', label: '📥 Import Data' },
