@@ -33,6 +33,28 @@ const EXCEL_HEADER_MAP: Record<string, string> = {
 }
 const EXCEL_REQUIRED_FIELDS = ['token_no']
 
+// Mirrors the VARCHAR limits in the complaints_v2 table. Pasted data that
+// isn't really tab-separated (e.g. someone pastes a whole complaint's
+// free-text detail view) misaligns into the wrong columns and can blow
+// past a short VARCHAR limit, which Postgres rejects with an opaque
+// "value too long" error. Catching it client-side gives a clear reason.
+const FIELD_MAX_LENGTHS: Record<string, number> = {
+  token_no: 50, officer_level: 20, mobile_no: 20, district: 100, block: 150,
+  login_user_id: 100, department: 255, dept_head: 255, officer_name: 255,
+  officer_designation: 255, owner_name: 255, topic: 255,
+}
+
+function fieldLengthViolations(row: ParsedComplaintRow): string[] {
+  const issues: string[] = []
+  for (const [field, max] of Object.entries(FIELD_MAX_LENGTHS)) {
+    const val = (row as any)[field]
+    if (typeof val === 'string' && val.length > max) {
+      issues.push(`${field} (${val.length} chars, max ${max})`)
+    }
+  }
+  return issues
+}
+
 type ParsedComplaintRow = {
   token_no: string
   owner_name?: string
@@ -483,6 +505,19 @@ export default function ComplaintsV2Page() {
   async function importRows(parsed: ParsedComplaintRow[]) {
     if (parsed.length === 0) { showMsg('error', 'कोई मान्य पंक्ति नहीं मिली।'); return }
 
+    // Reject rows whose fields don't fit the column limits before touching
+    // the database — usually means the pasted text wasn't real
+    // tab-separated data (e.g. a single complaint's full detail text).
+    const invalid = parsed.map(r => ({ r, issues: fieldLengthViolations(r) })).filter(x => x.issues.length > 0)
+    if (invalid.length > 0) {
+      showMsg('error',
+        `${invalid.length} पंक्ति(याँ) गलत फॉर्मेट में लग रही हैं (शायद यह tab-separated डेटा नहीं है): ` +
+        `${invalid[0].r.token_no || '(खाली टोकन)'} में ${invalid[0].issues.join(', ')}। ` +
+        `अगर आप किसी एक शिकायत का पूरा विवरण (अधिकारी गतिविधि सहित) डाल रहे हैं तो कृपया "+ Add Complaint" इस्तेमाल करें — Bulk Import सिर्फ Excel की कई पंक्तियों के लिए है।`
+      )
+      return
+    }
+
     setBulkSaving(true)
     setBulkLog(null)
 
@@ -520,6 +555,10 @@ export default function ComplaintsV2Page() {
   }
 
   async function handleBulkImport() {
+    if (bulkText.trim() && !bulkText.includes('\t')) {
+      showMsg('error', 'यह डेटा Tab-separated नहीं लग रहा (Excel से कॉपी किया हुआ नहीं)। अगर आप एक शिकायत का पूरा विवरण पेस्ट कर रहे हैं, तो कृपया "+ Add Complaint" इस्तेमाल करें।')
+      return
+    }
     await importRows(parseBulkRows(bulkText))
   }
 
