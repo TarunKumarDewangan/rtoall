@@ -18,7 +18,9 @@ export default function SubsidyExtractedDataPage() {
   const [deletingAll, setDeletingAll] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false)
-  const [showCG05Only, setShowCG05Only] = useState(false)
+  // Defaults to CG05-only since that's the district almost everything here
+  // belongs to — toggle it off to see every district's vehicle numbers.
+  const [showCG05Only, setShowCG05Only] = useState(true)
   const [pageSize, setPageSize] = useState<number | 'all'>(50)
   const [page, setPage] = useState(1)
 
@@ -246,7 +248,7 @@ export default function SubsidyExtractedDataPage() {
               onClick={() => setShowCG05Only(v => !v)}
               className={`px-4 py-2 rounded-lg border text-sm font-medium transition ${showCG05Only ? 'bg-blue-700 border-blue-700 text-white hover:bg-blue-800' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}
             >
-              🎯 सिर्फ CG05
+              {showCG05Only ? '🎯 सिर्फ CG05 (डिफ़ॉल्ट)' : '🌐 सभी वाहन (Full Numbers)'}
             </button>
           </div>
         </div>
