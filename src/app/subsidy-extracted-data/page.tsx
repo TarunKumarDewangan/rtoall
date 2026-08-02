@@ -18,6 +18,8 @@ export default function SubsidyExtractedDataPage() {
   const [deletingAll, setDeletingAll] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false)
+  const [pageSize, setPageSize] = useState<number | 'all'>(50)
+  const [page, setPage] = useState(1)
 
   const [pinAction, setPinAction] = useState<null
     | { type: 'delete'; id: number }
@@ -60,6 +62,18 @@ export default function SubsidyExtractedDataPage() {
     }
     return rows
   }, [entries, search, showDuplicatesOnly, duplicateCounts])
+
+  // Jump back to page 1 whenever the filtered set or page size changes,
+  // so you don't land on an empty out-of-range page.
+  useEffect(() => { setPage(1) }, [search, showDuplicatesOnly, pageSize])
+
+  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const paginated = useMemo(() => {
+    if (pageSize === 'all') return filtered
+    const start = (currentPage - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, pageSize, currentPage])
 
   function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
   function requestDeleteAll() { setPinAction({ type: 'deleteAll' }) }
@@ -173,6 +187,41 @@ export default function SubsidyExtractedDataPage() {
           </button>
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-gray-500">हर पेज में दिखाएँ:</span>
+            <select
+              value={pageSize}
+              onChange={e => setPageSize(e.target.value === 'all' ? 'all' : parseInt(e.target.value, 10))}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+            >
+              {[50, 100, 200, 300, 400, 500, 1000, 5000, 10000].map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+              <option value="all">Full View (सभी)</option>
+            </select>
+          </div>
+          {pageSize !== 'all' && totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs font-medium hover:bg-gray-50 disabled:opacity-40"
+              >
+                ← Prev
+              </button>
+              <span className="text-xs text-gray-600">Page {currentPage} / {totalPages}</span>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs font-medium hover:bg-gray-50 disabled:opacity-40"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+        </div>
+
         {loading ? (
           <div className="text-center py-16 text-gray-400">Loading...</div>
         ) : (
@@ -186,11 +235,11 @@ export default function SubsidyExtractedDataPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {paginated.length === 0 ? (
                   <tr><td colSpan={4} className="text-center py-10 text-gray-400">No entries found</td></tr>
-                ) : filtered.map((entry, i) => (
+                ) : paginated.map((entry, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-xs text-gray-500">{i + 1}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{pageSize === 'all' ? i + 1 : (currentPage - 1) * pageSize + i + 1}</td>
                     <td className="px-3 py-2 text-sm font-mono font-semibold text-blue-900 whitespace-nowrap">
                       {entry.vehicle_no}
                       {duplicateCounts[entry.vehicle_no] > 1 && (
@@ -207,6 +256,26 @@ export default function SubsidyExtractedDataPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {pageSize !== 'all' && totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-3">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs font-medium hover:bg-gray-50 disabled:opacity-40"
+            >
+              ← Prev
+            </button>
+            <span className="text-xs text-gray-600">Page {currentPage} / {totalPages}</span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs font-medium hover:bg-gray-50 disabled:opacity-40"
+            >
+              Next →
+            </button>
           </div>
         )}
       </div>
