@@ -8,7 +8,11 @@ import { supabase } from '@/lib/supabase'
 // style people paste from Excel/WhatsApp/PDFs: "CG05AQ6874", "CG 05 AQ 6874",
 // "CG-05-AQ-6874", lowercase, etc. Captures district code, letter series,
 // and the numeric part separately so they can be rejoined cleanly.
-const VEHICLE_NO_RE = /CG\s*[-\s]?\s*(\d{2})\s*[-\s]?\s*([A-Za-z]{1,3})\s*[-\s]?\s*(\d{1,4})/gi
+// The gaps use [ \t] (space/tab only), NEVER \s — \s also matches newlines,
+// which let an incomplete line like "CG05" on its own reach across the line
+// break into the next line's "CG05..." and misread its leading "CG05" as
+// the letter+digit parts, producing garbage matches like "CG05CG05".
+const VEHICLE_NO_RE = /CG[ \t]*[-]?[ \t]*(\d{2})[ \t]*[-]?[ \t]*([A-Za-z]{1,3})[ \t]*[-]?[ \t]*(\d{1,4})/gi
 
 function extractVehicleNumbers(text: string): string[] {
   const found: string[] = []
