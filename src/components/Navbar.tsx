@@ -28,6 +28,7 @@ const navItems: NavItem[] = [
     children: [
       { href: '/subsidy', label: 'Received Application' },
       { href: '/subsidy-status', label: 'EV Subsidy Status' },
+      { href: '/subsidy-extractor', label: 'EV Subsidy Extractor' },
     ],
   },
   {
