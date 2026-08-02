@@ -18,12 +18,17 @@ export default function SubsidyExtractedDataPage() {
   const [deletingAll, setDeletingAll] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false)
+  const [showCG05Only, setShowCG05Only] = useState(false)
   const [pageSize, setPageSize] = useState<number | 'all'>(50)
   const [page, setPage] = useState(1)
 
+  const [showRemoveDuplicatesConfirm, setShowRemoveDuplicatesConfirm] = useState(false)
+  const [removingDuplicates, setRemovingDuplicates] = useState(false)
+
   const [pinAction, setPinAction] = useState<null
     | { type: 'delete'; id: number }
-    | { type: 'deleteAll' }>(null)
+    | { type: 'deleteAll' }
+    | { type: 'removeDuplicates' }>(null)
 
   useEffect(() => { fetchEntries() }, [])
 
@@ -53,19 +58,34 @@ export default function SubsidyExtractedDataPage() {
     [duplicateCounts]
   )
 
+  // For each vehicle number that appears more than once, keeps the
+  // earliest-saved row (lowest id) and marks the rest for removal.
+  const duplicateIdsToRemove = useMemo(() => {
+    const groups: Record<string, EvExtractedData[]> = {}
+    entries.forEach(e => { (groups[e.vehicle_no] ||= []).push(e) })
+    const ids: number[] = []
+    Object.values(groups).forEach(group => {
+      if (group.length < 2) return
+      const sorted = [...group].sort((a, b) => (a.id ?? 0) - (b.id ?? 0))
+      sorted.slice(1).forEach(e => { if (e.id != null) ids.push(e.id) })
+    })
+    return ids
+  }, [entries])
+
   const filtered = useMemo(() => {
     let rows = entries
     if (showDuplicatesOnly) rows = rows.filter(e => duplicateCounts[e.vehicle_no] > 1)
+    if (showCG05Only) rows = rows.filter(e => e.vehicle_no.toUpperCase().startsWith('CG05'))
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       rows = rows.filter(e => e.vehicle_no.toLowerCase().includes(q))
     }
     return rows
-  }, [entries, search, showDuplicatesOnly, duplicateCounts])
+  }, [entries, search, showDuplicatesOnly, showCG05Only, duplicateCounts])
 
   // Jump back to page 1 whenever the filtered set or page size changes,
   // so you don't land on an empty out-of-range page.
-  useEffect(() => { setPage(1) }, [search, showDuplicatesOnly, pageSize])
+  useEffect(() => { setPage(1) }, [search, showDuplicatesOnly, showCG05Only, pageSize])
 
   const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -77,10 +97,12 @@ export default function SubsidyExtractedDataPage() {
 
   function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
   function requestDeleteAll() { setPinAction({ type: 'deleteAll' }) }
+  function requestRemoveDuplicates() { setPinAction({ type: 'removeDuplicates' }) }
   function onPinSuccess() {
     if (!pinAction) return
     if (pinAction.type === 'delete') setDeleteId(pinAction.id)
     else if (pinAction.type === 'deleteAll') setShowDeleteAll(true)
+    else if (pinAction.type === 'removeDuplicates') setShowRemoveDuplicatesConfirm(true)
     setPinAction(null)
   }
 
@@ -112,6 +134,28 @@ export default function SubsidyExtractedDataPage() {
     setShowDeleteAll(false)
     if (error) showMsg('error', error.message)
     else { showMsg('success', 'All records deleted.'); fetchEntries() }
+  }
+
+  // Keeps the earliest-saved copy of each vehicle number and deletes the
+  // rest, in chunks so a large duplicate set doesn't hit a payload limit.
+  async function handleRemoveDuplicates() {
+    if (duplicateIdsToRemove.length === 0) { setShowRemoveDuplicatesConfirm(false); return }
+    setRemovingDuplicates(true)
+    const CHUNK = 500
+    for (let i = 0; i < duplicateIdsToRemove.length; i += CHUNK) {
+      const chunk = duplicateIdsToRemove.slice(i, i + CHUNK)
+      const { error } = await supabase.from('ev_extracted_data').delete().in('id', chunk)
+      if (error) {
+        setRemovingDuplicates(false)
+        setShowRemoveDuplicatesConfirm(false)
+        showMsg('error', error.message)
+        return
+      }
+    }
+    setRemovingDuplicates(false)
+    setShowRemoveDuplicatesConfirm(false)
+    showMsg('success', `${duplicateIdsToRemove.length} duplicate रिकॉर्ड हटाए गए।`)
+    fetchEntries()
   }
 
   function copyAll() {
@@ -156,6 +200,19 @@ export default function SubsidyExtractedDataPage() {
               className={`px-4 py-2 rounded-lg border text-sm font-medium transition ${showDuplicatesOnly ? 'bg-amber-600 border-amber-600 text-white hover:bg-amber-700' : 'border-amber-300 text-amber-700 hover:bg-amber-50'}`}
             >
               🔁 Check Duplicate Values {duplicateVehicleCount > 0 && `(${duplicateVehicleCount})`}
+            </button>
+            <button
+              onClick={requestRemoveDuplicates}
+              disabled={duplicateIdsToRemove.length === 0}
+              className="px-4 py-2 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 transition disabled:opacity-40"
+            >
+              🧹 Remove Duplicate Values {duplicateIdsToRemove.length > 0 && `(${duplicateIdsToRemove.length})`}
+            </button>
+            <button
+              onClick={() => setShowCG05Only(v => !v)}
+              className={`px-4 py-2 rounded-lg border text-sm font-medium transition ${showCG05Only ? 'bg-blue-700 border-blue-700 text-white hover:bg-blue-800' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}
+            >
+              🎯 सिर्फ CG05
             </button>
           </div>
         </div>
@@ -283,7 +340,11 @@ export default function SubsidyExtractedDataPage() {
       {/* PIN Modal */}
       {pinAction && (
         <PinModal
-          action={pinAction.type === 'delete' ? 'delete this entry' : 'delete ALL records'}
+          action={
+            pinAction.type === 'delete' ? 'delete this entry'
+              : pinAction.type === 'deleteAll' ? 'delete ALL records'
+              : 'remove duplicate records'
+          }
           onSuccess={onPinSuccess}
           onCancel={() => setPinAction(null)}
         />
@@ -314,6 +375,25 @@ export default function SubsidyExtractedDataPage() {
               <button onClick={() => setShowDeleteAll(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Cancel</button>
               <button onClick={handleDeleteAll} disabled={deletingAll} className="px-5 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-60">
                 {deletingAll ? 'Deleting...' : 'Yes, Delete All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Duplicates Confirm */}
+      {showRemoveDuplicatesConfirm && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border-2 border-red-500">
+            <h3 className="text-xl font-bold text-red-700 mb-2">🧹 Remove Duplicate Values?</h3>
+            <p className="text-sm text-gray-700 mb-1">
+              हर वाहन नंबर की सबसे पहली एंट्री रखी जाएगी, बाकी <strong>{duplicateIdsToRemove.length} duplicate रिकॉर्ड</strong> हटा दिए जाएंगे।
+            </p>
+            <p className="text-sm text-red-600 font-semibold mb-5">This action cannot be undone!</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowRemoveDuplicatesConfirm(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={handleRemoveDuplicates} disabled={removingDuplicates} className="px-5 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-60">
+                {removingDuplicates ? 'Removing...' : 'Yes, Remove Duplicates'}
               </button>
             </div>
           </div>
