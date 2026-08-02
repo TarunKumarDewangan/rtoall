@@ -141,21 +141,55 @@ export default function SubsidyExtractedDataPage() {
   async function handleRemoveDuplicates() {
     if (duplicateIdsToRemove.length === 0) { setShowRemoveDuplicatesConfirm(false); return }
     setRemovingDuplicates(true)
+
+    // Snapshot the full set of distinct vehicle numbers before touching
+    // anything, so we can prove afterward that none of them vanished —
+    // only the extra copies did.
+    const distinctBefore = new Set(entries.map(e => e.vehicle_no))
+    const idsToRemove = new Set(duplicateIdsToRemove)
+
     const CHUNK = 500
     for (let i = 0; i < duplicateIdsToRemove.length; i += CHUNK) {
       const chunk = duplicateIdsToRemove.slice(i, i + CHUNK)
+      // .in('id', chunk) can only touch rows whose id is in this exact
+      // list — every id here came from duplicateIdsToRemove, which always
+      // excludes the lowest (earliest-saved) id per vehicle number.
       const { error } = await supabase.from('ev_extracted_data').delete().in('id', chunk)
       if (error) {
         setRemovingDuplicates(false)
         setShowRemoveDuplicatesConfirm(false)
         showMsg('error', error.message)
+        fetchEntries() // reload to reflect whatever partial state actually exists
         return
       }
     }
+
+    const { data: freshData, error: refetchError } = await fetchAllRows<EvExtractedData>('ev_extracted_data', 'vehicle_no', true)
     setRemovingDuplicates(false)
     setShowRemoveDuplicatesConfirm(false)
-    showMsg('success', `${duplicateIdsToRemove.length} duplicate रिकॉर्ड हटाए गए।`)
-    fetchEntries()
+
+    if (refetchError) {
+      showMsg('error', `Deleted but could not verify: ${refetchError.message}`)
+      fetchEntries()
+      return
+    }
+
+    const after = freshData || []
+    const distinctAfter = new Set(after.map(e => e.vehicle_no))
+    const lostVehicles = [...distinctBefore].filter(v => !distinctAfter.has(v))
+    const stillHasRemovedId = after.some(e => e.id != null && idsToRemove.has(e.id))
+
+    setEntries(after)
+
+    if (lostVehicles.length > 0 || stillHasRemovedId) {
+      showMsg('error',
+        stillHasRemovedId
+          ? 'चेतावनी: कुछ duplicate रिकॉर्ड हटाए नहीं जा सके — दोबारा कोशिश करें।'
+          : `चेतावनी: ${lostVehicles.length} वाहन नंबर पूरी तरह गायब हो गए (यह नहीं होना चाहिए था): ${lostVehicles.slice(0, 5).join(', ')}। कृपया तुरंत जाँच करें।`
+      )
+    } else {
+      showMsg('success', `${duplicateIdsToRemove.length} duplicate रिकॉर्ड हटाए गए — सभी ${distinctBefore.size} मूल वाहन नंबर सुरक्षित हैं (सत्यापित)।`)
+    }
   }
 
   function copyAll() {
