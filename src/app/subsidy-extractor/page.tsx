@@ -4,23 +4,24 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
-// Matches Chhattisgarh vehicle numbers in any common spacing/punctuation
-// style people paste from Excel/WhatsApp/PDFs: "CG05AQ6874", "CG 05 AQ 6874",
-// "CG-05-AQ-6874", lowercase, etc. Captures district code, letter series,
-// and the numeric part separately so they can be rejoined cleanly.
-// The gaps use [ \t] (space/tab only), NEVER \s — \s also matches newlines,
-// which let an incomplete line like "CG05" on its own reach across the line
-// break into the next line's "CG05..." and misread its leading "CG05" as
-// the letter+digit parts, producing garbage matches like "CG05CG05".
-const VEHICLE_NO_RE = /CG[ \t]*[-]?[ \t]*(\d{2})[ \t]*[-]?[ \t]*([A-Za-z]{1,3})[ \t]*[-]?[ \t]*(\d{1,4})/gi
+// Whole-token capture, on purpose: any whitespace-separated token that
+// starts with "CG" + a 2-digit district code is taken in full, exactly as
+// typed — including malformed/non-standard ones like "CG05/TC/153" or a
+// bare "CG05". Earlier versions tried to parse out clean district/series/
+// number sub-parts, which silently dropped anything that didn't fit the
+// expected shape and (worse) let a match reach across a line break and
+// fabricate values that don't exist in the source data at all. Only
+// trailing punctuation (commas etc. from list-style pasting) is trimmed.
+const TOKEN_START_RE = /^CG[-]?\d{2}/i
 
 function extractVehicleNumbers(text: string): string[] {
+  const tokens = text.split(/\s+/).filter(Boolean)
   const found: string[] = []
-  let m: RegExpExecArray | null
-  const re = new RegExp(VEHICLE_NO_RE)
-  while ((m = re.exec(text)) !== null) {
-    const vehicleNo = `CG${m[1]}${m[2].toUpperCase()}${m[3]}`
-    found.push(vehicleNo)
+  for (const token of tokens) {
+    const trimmed = token.replace(/^[,;)]+|[,;)]+$/g, '')
+    if (TOKEN_START_RE.test(trimmed)) {
+      found.push(trimmed.toUpperCase())
+    }
   }
   return found
 }
@@ -93,7 +94,7 @@ export default function SubsidyExtractorPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-blue-900">EV Subsidy Extractor</h1>
-            <p className="text-sm text-gray-500 mt-0.5">कोई भी डेटा पेस्ट करें — सिर्फ वाहन नंबर (CG...) निकाले जाएंगे</p>
+            <p className="text-sm text-gray-500 mt-0.5">कोई भी डेटा पेस्ट करें — CG05 से शुरू होने वाला हर टोकन पूरा-का-पूरा निकाला जाएगा (गलत/अधूरे भी)</p>
           </div>
           <Link href="/subsidy-extracted-data" className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
             📂 View Saved Data
