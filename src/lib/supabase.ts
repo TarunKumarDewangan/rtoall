@@ -231,3 +231,9 @@ export type ModifyStatus = {
   file_link: string
   created_at?: string
 }
+
+export type EvExtractedData = {
+  id?: number
+  vehicle_no: string
+  created_at?: string
+}

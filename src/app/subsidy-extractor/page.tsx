@@ -1,6 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabase'
 
 // Matches Chhattisgarh vehicle numbers in any common spacing/punctuation
 // style people paste from Excel/WhatsApp/PDFs: "CG05AQ6874", "CG 05 AQ 6874",
@@ -19,11 +21,17 @@ function extractVehicleNumbers(text: string): string[] {
   return found
 }
 
+const SAVE_CHUNK_SIZE = 500
+
 export default function SubsidyExtractorPage() {
   const [input, setInput] = useState('')
   const [dedupe, setDedupe] = useState(true)
   const [sortAsc, setSortAsc] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  const [saving, setSaving] = useState(false)
+  const [saveProgress, setSaveProgress] = useState<{ done: number; total: number } | null>(null)
+  const [saveResult, setSaveResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const vehicleNumbers = useMemo(() => {
     let list = extractVehicleNumbers(input)
@@ -48,12 +56,49 @@ export default function SubsidyExtractorPage() {
     URL.revokeObjectURL(url)
   }
 
+  async function saveToDatabase() {
+    if (vehicleNumbers.length === 0) return
+    setSaving(true)
+    setSaveResult(null)
+    setSaveProgress({ done: 0, total: vehicleNumbers.length })
+
+    const { count: beforeCount } = await supabase.from('ev_extracted_data').select('id', { count: 'exact', head: true })
+
+    const rows = [...new Set(vehicleNumbers)].map(v => ({ vehicle_no: v }))
+    for (let i = 0; i < rows.length; i += SAVE_CHUNK_SIZE) {
+      const chunk = rows.slice(i, i + SAVE_CHUNK_SIZE)
+      const { error } = await supabase.from('ev_extracted_data').upsert(chunk, { onConflict: 'vehicle_no', ignoreDuplicates: true })
+      if (error) {
+        setSaving(false)
+        setSaveProgress(null)
+        setSaveResult({ type: 'error', text: error.message })
+        return
+      }
+      setSaveProgress({ done: Math.min(i + SAVE_CHUNK_SIZE, rows.length), total: rows.length })
+    }
+
+    const { count: afterCount } = await supabase.from('ev_extracted_data').select('id', { count: 'exact', head: true })
+    const added = (afterCount ?? 0) - (beforeCount ?? 0)
+
+    setSaving(false)
+    setSaveProgress(null)
+    setSaveResult({
+      type: 'success',
+      text: `${added} नए वाहन नंबर सेव हुए (${rows.length - added} पहले से मौजूद थे)। कुल अब ${afterCount ?? '?'} हैं।`,
+    })
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full px-4 py-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-blue-900">EV Subsidy Extractor</h1>
-          <p className="text-sm text-gray-500 mt-0.5">कोई भी डेटा पेस्ट करें — सिर्फ वाहन नंबर (CG...) निकाले जाएंगे</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-blue-900">EV Subsidy Extractor</h1>
+            <p className="text-sm text-gray-500 mt-0.5">कोई भी डेटा पेस्ट करें — सिर्फ वाहन नंबर (CG...) निकाले जाएंगे</p>
+          </div>
+          <Link href="/subsidy-extracted-data" className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
+            📂 View Saved Data
+          </Link>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -107,7 +152,7 @@ export default function SubsidyExtractorPage() {
                 </table>
               )}
             </div>
-            <div className="flex gap-2 mt-3">
+            <div className="flex flex-wrap gap-2 mt-3">
               <button
                 onClick={copyAll}
                 disabled={vehicleNumbers.length === 0}
@@ -122,7 +167,21 @@ export default function SubsidyExtractorPage() {
               >
                 💾 Download .txt
               </button>
+              <button
+                onClick={saveToDatabase}
+                disabled={vehicleNumbers.length === 0 || saving}
+                className="px-4 py-2 rounded-lg border border-green-300 text-green-700 text-sm font-medium hover:bg-green-50 transition disabled:opacity-40"
+              >
+                {saving
+                  ? `Saving... ${saveProgress ? `(${saveProgress.done}/${saveProgress.total})` : ''}`
+                  : '🗄️ Save to Database'}
+              </button>
             </div>
+            {saveResult && (
+              <div className={`mt-3 px-3 py-2 rounded-lg text-xs font-medium ${saveResult.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                {saveResult.text}
+              </div>
+            )}
           </div>
         </div>
       </div>

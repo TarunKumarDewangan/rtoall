@@ -217,6 +217,14 @@ CREATE TABLE IF NOT EXISTS modify_status (
 -- If modify_status already exists from an earlier version, run this to add the new column:
 -- ALTER TABLE modify_status ADD COLUMN IF NOT EXISTS file_link TEXT;
 
+-- 11. EV Extracted Data (permanent store for vehicle numbers pulled via the
+-- EV Subsidy Extractor tool)
+CREATE TABLE IF NOT EXISTS ev_extracted_data (
+  id SERIAL PRIMARY KEY,
+  vehicle_no VARCHAR(50) UNIQUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
 
@@ -233,6 +241,7 @@ CREATE POLICY "Allow all" ON complaints FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON subsidy_status FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON complaints_v2 FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON modify_status FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON ev_extracted_data FOR ALL USING (true) WITH CHECK (true);
 
 -- Enable RLS on all tables
 ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
@@ -246,3 +255,4 @@ ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subsidy_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE complaints_v2 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE modify_status ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ev_extracted_data ENABLE ROW LEVEL SECURITY;
