@@ -221,9 +221,13 @@ CREATE TABLE IF NOT EXISTS modify_status (
 -- EV Subsidy Extractor tool)
 CREATE TABLE IF NOT EXISTS ev_extracted_data (
   id SERIAL PRIMARY KEY,
-  vehicle_no VARCHAR(50) UNIQUE,
+  vehicle_no VARCHAR(50),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- If ev_extracted_data was created with the earlier UNIQUE constraint,
+-- run this to allow duplicate vehicle numbers to be saved:
+-- ALTER TABLE ev_extracted_data DROP CONSTRAINT IF EXISTS ev_extracted_data_vehicle_no_key;
 
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;

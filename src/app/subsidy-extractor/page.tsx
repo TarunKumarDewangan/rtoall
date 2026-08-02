@@ -25,7 +25,6 @@ const SAVE_CHUNK_SIZE = 500
 
 export default function SubsidyExtractorPage() {
   const [input, setInput] = useState('')
-  const [dedupe, setDedupe] = useState(true)
   const [sortAsc, setSortAsc] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -33,12 +32,13 @@ export default function SubsidyExtractorPage() {
   const [saveProgress, setSaveProgress] = useState<{ done: number; total: number } | null>(null)
   const [saveResult, setSaveResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  // Duplicates are kept intentionally — a repeated vehicle number in the
+  // source data is meaningful information, not noise to be collapsed away.
   const vehicleNumbers = useMemo(() => {
     let list = extractVehicleNumbers(input)
-    if (dedupe) list = [...new Set(list)]
     if (sortAsc) list = [...list].sort((a, b) => a.localeCompare(b))
     return list
-  }, [input, dedupe, sortAsc])
+  }, [input, sortAsc])
 
   function copyAll() {
     navigator.clipboard.writeText(vehicleNumbers.join('\n'))
@@ -56,18 +56,19 @@ export default function SubsidyExtractorPage() {
     URL.revokeObjectURL(url)
   }
 
+  // Saves exactly what's on screen, duplicates included — no dedup, no
+  // conflict handling, since repeated vehicle numbers are allowed to
+  // accumulate as separate rows.
   async function saveToDatabase() {
     if (vehicleNumbers.length === 0) return
     setSaving(true)
     setSaveResult(null)
     setSaveProgress({ done: 0, total: vehicleNumbers.length })
 
-    const { count: beforeCount } = await supabase.from('ev_extracted_data').select('id', { count: 'exact', head: true })
-
-    const rows = [...new Set(vehicleNumbers)].map(v => ({ vehicle_no: v }))
+    const rows = vehicleNumbers.map(v => ({ vehicle_no: v }))
     for (let i = 0; i < rows.length; i += SAVE_CHUNK_SIZE) {
       const chunk = rows.slice(i, i + SAVE_CHUNK_SIZE)
-      const { error } = await supabase.from('ev_extracted_data').upsert(chunk, { onConflict: 'vehicle_no', ignoreDuplicates: true })
+      const { error } = await supabase.from('ev_extracted_data').insert(chunk)
       if (error) {
         setSaving(false)
         setSaveProgress(null)
@@ -77,15 +78,9 @@ export default function SubsidyExtractorPage() {
       setSaveProgress({ done: Math.min(i + SAVE_CHUNK_SIZE, rows.length), total: rows.length })
     }
 
-    const { count: afterCount } = await supabase.from('ev_extracted_data').select('id', { count: 'exact', head: true })
-    const added = (afterCount ?? 0) - (beforeCount ?? 0)
-
     setSaving(false)
     setSaveProgress(null)
-    setSaveResult({
-      type: 'success',
-      text: `${added} नए वाहन नंबर सेव हुए (${rows.length - added} पहले से मौजूद थे)। कुल अब ${afterCount ?? '?'} हैं।`,
-    })
+    setSaveResult({ type: 'success', text: `${rows.length} वाहन नंबर सेव हुए (duplicates सहित)।` })
   }
 
   return (
@@ -124,10 +119,6 @@ export default function SubsidyExtractorPage() {
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-semibold text-gray-600">वाहन नंबर ({vehicleNumbers.length})</label>
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
-                  <input type="checkbox" checked={dedupe} onChange={e => setDedupe(e.target.checked)} className="w-3.5 h-3.5 accent-blue-700" />
-                  Remove duplicates
-                </label>
                 <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
                   <input type="checkbox" checked={sortAsc} onChange={e => setSortAsc(e.target.checked)} className="w-3.5 h-3.5 accent-blue-700" />
                   Sort A-Z

@@ -17,6 +17,7 @@ export default function SubsidyExtractedDataPage() {
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false)
 
   const [pinAction, setPinAction] = useState<null
     | { type: 'delete'; id: number }
@@ -37,11 +38,28 @@ export default function SubsidyExtractedDataPage() {
     setTimeout(() => setMessage(null), 3500)
   }
 
+  // Counts how many times each vehicle number appears (duplicates are
+  // allowed to accumulate in this table on purpose).
+  const duplicateCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    entries.forEach(e => { counts[e.vehicle_no] = (counts[e.vehicle_no] || 0) + 1 })
+    return counts
+  }, [entries])
+
+  const duplicateVehicleCount = useMemo(
+    () => Object.values(duplicateCounts).filter(c => c > 1).length,
+    [duplicateCounts]
+  )
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return entries
-    const q = search.trim().toLowerCase()
-    return entries.filter(e => e.vehicle_no.toLowerCase().includes(q))
-  }, [entries, search])
+    let rows = entries
+    if (showDuplicatesOnly) rows = rows.filter(e => duplicateCounts[e.vehicle_no] > 1)
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      rows = rows.filter(e => e.vehicle_no.toLowerCase().includes(q))
+    }
+    return rows
+  }, [entries, search, showDuplicatesOnly, duplicateCounts])
 
   function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
   function requestDeleteAll() { setPinAction({ type: 'deleteAll' }) }
@@ -56,7 +74,7 @@ export default function SubsidyExtractedDataPage() {
     const vehicle_no = newVehicleNo.trim().toUpperCase()
     if (!vehicle_no) return
     setAdding(true)
-    const { error } = await supabase.from('ev_extracted_data').upsert({ vehicle_no }, { onConflict: 'vehicle_no', ignoreDuplicates: true })
+    const { error } = await supabase.from('ev_extracted_data').insert({ vehicle_no })
     setAdding(false)
     if (error) showMsg('error', error.message)
     else {
@@ -119,6 +137,12 @@ export default function SubsidyExtractedDataPage() {
             <button onClick={downloadTxt} disabled={filtered.length === 0} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition disabled:opacity-40">
               💾 Download .txt
             </button>
+            <button
+              onClick={() => setShowDuplicatesOnly(v => !v)}
+              className={`px-4 py-2 rounded-lg border text-sm font-medium transition ${showDuplicatesOnly ? 'bg-amber-600 border-amber-600 text-white hover:bg-amber-700' : 'border-amber-300 text-amber-700 hover:bg-amber-50'}`}
+            >
+              🔁 Check Duplicate Values {duplicateVehicleCount > 0 && `(${duplicateVehicleCount})`}
+            </button>
           </div>
         </div>
 
@@ -167,7 +191,14 @@ export default function SubsidyExtractedDataPage() {
                 ) : filtered.map((entry, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{i + 1}</td>
-                    <td className="px-3 py-2 text-sm font-mono font-semibold text-blue-900 whitespace-nowrap">{entry.vehicle_no}</td>
+                    <td className="px-3 py-2 text-sm font-mono font-semibold text-blue-900 whitespace-nowrap">
+                      {entry.vehicle_no}
+                      {duplicateCounts[entry.vehicle_no] > 1 && (
+                        <span className="ml-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">
+                          ×{duplicateCounts[entry.vehicle_no]}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-IN') : '—'}</td>
                     <td className="px-3 py-2 text-xs">
                       <button onClick={() => requestDelete(entry.id!)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
