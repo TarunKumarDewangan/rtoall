@@ -65,7 +65,16 @@ export default function EvFinalV1Page() {
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
-  const [pinAction, setPinAction] = useState<null | { type: 'delete'; id: number } | { type: 'deleteAll' } | { type: 'removeDuplicates' }>(null)
+
+  const [editRow, setEditRow] = useState<EvFinalV1Row | null>(null)
+  const [editForm, setEditForm] = useState<Record<string, string>>({})
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  const [pinAction, setPinAction] = useState<null
+    | { type: 'edit'; row: EvFinalV1Row }
+    | { type: 'delete'; id: number }
+    | { type: 'deleteAll' }
+    | { type: 'removeDuplicates' }>(null)
 
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({})
   const [showColPicker, setShowColPicker] = useState(false)
@@ -237,15 +246,35 @@ export default function EvFinalV1Page() {
     return filtered.slice(start, start + pageSize)
   }, [filtered, pageSize, currentPage])
 
+  function requestEdit(row: EvFinalV1Row) { setPinAction({ type: 'edit', row }) }
   function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
   function requestDeleteAll() { setPinAction({ type: 'deleteAll' }) }
   function requestRemoveDuplicates() { setPinAction({ type: 'removeDuplicates' }) }
   function onPinSuccess() {
     if (!pinAction) return
-    if (pinAction.type === 'delete') setDeleteId(pinAction.id)
+    if (pinAction.type === 'edit') openEdit(pinAction.row)
+    else if (pinAction.type === 'delete') setDeleteId(pinAction.id)
     else if (pinAction.type === 'deleteAll') setShowDeleteAll(true)
     else if (pinAction.type === 'removeDuplicates') setShowRemoveDuplicatesConfirm(true)
     setPinAction(null)
+  }
+
+  function openEdit(row: EvFinalV1Row) {
+    setEditRow(row)
+    setEditForm({ ...row.row_data })
+  }
+
+  async function handleSaveEdit() {
+    if (!editRow?.id) return
+    setSavingEdit(true)
+    const { error } = await supabase.from('ev_final_v1').update({ row_data: editForm }).eq('id', editRow.id)
+    setSavingEdit(false)
+    if (error) showMsg('error', error.message)
+    else {
+      showMsg('success', 'Updated.')
+      setEditRow(null)
+      fetchSaved()
+    }
   }
 
   // Keeps the earliest-saved row per duplicate value in dupColumn and
@@ -609,7 +638,10 @@ export default function EvFinalV1Page() {
                       </td>
                     ))}
                     <td className="px-3 py-2 text-xs">
-                      <button onClick={() => requestDelete(r.id!)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
+                      <div className="flex gap-1">
+                        <button onClick={() => requestEdit(r)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
+                        <button onClick={() => requestDelete(r.id!)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -633,13 +665,42 @@ export default function EvFinalV1Page() {
       {pinAction && (
         <PinModal
           action={
-            pinAction.type === 'delete' ? 'delete this record'
+            pinAction.type === 'edit' ? 'edit this record'
+              : pinAction.type === 'delete' ? 'delete this record'
               : pinAction.type === 'deleteAll' ? 'delete ALL records'
               : 'remove duplicate records'
           }
           onSuccess={onPinSuccess}
           onCancel={() => setPinAction(null)}
         />
+      )}
+
+      {/* Edit Form Modal */}
+      {editRow && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center overflow-y-auto py-8">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 p-6">
+            <h2 className="text-lg font-bold text-blue-900 mb-5">Edit Record</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-1">
+              {columns.map(c => (
+                <div key={c}>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">{c}</label>
+                  <input
+                    type="text"
+                    value={editForm[c] || ''}
+                    onChange={e => setEditForm(f => ({ ...f, [c]: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setEditRow(null)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition">Cancel</button>
+              <button onClick={handleSaveEdit} disabled={savingEdit} className="px-5 py-2 rounded-lg bg-blue-900 text-white text-sm font-semibold hover:bg-blue-800 transition disabled:opacity-60">
+                {savingEdit ? 'Saving...' : 'Update'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete Single Confirm */}
