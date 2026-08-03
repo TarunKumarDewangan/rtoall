@@ -38,6 +38,7 @@ function computeColumns(rows: EvFinalV1Row[]): string[] {
 }
 
 const SAVE_CHUNK_SIZE = 300 // wide rows -> smaller chunks to stay under payload limits
+const VISIBLE_COLS_STORAGE_KEY = 'ev_final_v1_visible_columns'
 
 export default function EvFinalV1Page() {
   const [input, setInput] = useState('')
@@ -55,6 +56,21 @@ export default function EvFinalV1Page() {
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
   const [pinAction, setPinAction] = useState<null | { type: 'delete'; id: number } | { type: 'deleteAll' }>(null)
+
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({})
+  const [showColPicker, setShowColPicker] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem(VISIBLE_COLS_STORAGE_KEY)
+    if (saved) {
+      try { setVisibleCols(JSON.parse(saved)) } catch {}
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(VISIBLE_COLS_STORAGE_KEY, JSON.stringify(visibleCols))
+  }, [visibleCols])
 
   const parsed = useMemo(() => parseTable(input), [input])
 
@@ -141,6 +157,17 @@ export default function EvFinalV1Page() {
     else { showMsg('success', 'All records deleted.'); fetchSaved() }
   }
 
+  function copyAll() {
+    const visibleColumns = columns.filter(c => visibleCols[c] !== false)
+    const text = [
+      visibleColumns.join('\t'),
+      ...filtered.map(r => visibleColumns.map(c => r.row_data?.[c] || '').join('\t')),
+    ].join('\n')
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full px-4 py-6">
@@ -224,6 +251,39 @@ export default function EvFinalV1Page() {
             <button onClick={requestDeleteAll} className="px-4 py-2 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 transition">
               🗑️ Delete All
             </button>
+            <button onClick={copyAll} disabled={filtered.length === 0} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition disabled:opacity-40">
+              {copied ? '✅ Copied!' : '📋 Copy All'}
+            </button>
+            <div className="relative">
+              <button onClick={() => setShowColPicker(v => !v)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition">
+                ⚙ कॉलम
+              </button>
+              {showColPicker && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowColPicker(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-64 max-h-80 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-2">
+                    <div className="flex justify-between items-center px-2 py-1 mb-1 border-b border-gray-100">
+                      <span className="text-xs font-semibold text-gray-500">दिखाएँ / छिपाएँ</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => setVisibleCols(Object.fromEntries(columns.map(c => [c, true])))} className="text-xs text-blue-700 hover:underline">All</button>
+                        <button onClick={() => setVisibleCols(Object.fromEntries(columns.map(c => [c, false])))} className="text-xs text-blue-700 hover:underline">None</button>
+                      </div>
+                    </div>
+                    {columns.map(c => (
+                      <label key={c} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm">
+                        <input
+                          type="checkbox"
+                          checked={visibleCols[c] !== false}
+                          onChange={e => setVisibleCols(prev => ({ ...prev, [c]: e.target.checked }))}
+                          className="w-4 h-4 accent-blue-700"
+                        />
+                        {c}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -275,7 +335,7 @@ export default function EvFinalV1Page() {
               <thead>
                 <tr className="bg-blue-900 text-white">
                   <th className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">#</th>
-                  {columns.map(c => (
+                  {columns.filter(c => visibleCols[c] !== false).map(c => (
                     <th key={c} className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">{c}</th>
                   ))}
                   <th className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">Actions</th>
@@ -283,11 +343,11 @@ export default function EvFinalV1Page() {
               </thead>
               <tbody>
                 {paginated.length === 0 ? (
-                  <tr><td colSpan={columns.length + 2} className="text-center py-10 text-gray-400">No records found</td></tr>
+                  <tr><td colSpan={columns.filter(c => visibleCols[c] !== false).length + 2} className="text-center py-10 text-gray-400">No records found</td></tr>
                 ) : paginated.map((r, i) => (
                   <tr key={r.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{pageSize === 'all' ? i + 1 : (currentPage - 1) * pageSize + i + 1}</td>
-                    {columns.map(c => (
+                    {columns.filter(c => visibleCols[c] !== false).map(c => (
                       <td key={c} className="px-3 py-2 text-xs whitespace-nowrap max-w-[260px] truncate" title={r.row_data?.[c]}>{r.row_data?.[c] || '—'}</td>
                     ))}
                     <td className="px-3 py-2 text-xs">

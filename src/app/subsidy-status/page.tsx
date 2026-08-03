@@ -60,6 +60,23 @@ type FormType = typeof EMPTY_FORM
 
 const STATUS_OPTIONS = ['Success', 'Failed', 'Sent to Bank', 'ApplicationSubmitedRTO', 'NotSubmited']
 
+const COLUMNS = [
+  { id: 'vehicle_no', label: 'Vehicle No' },
+  { id: 'owner_name', label: 'Owner Name' },
+  { id: 'mobile_no', label: 'Mobile No' },
+  { id: 'category', label: 'Category' },
+  { id: 'ifsc', label: 'IFSC' },
+  { id: 'account_no', label: 'Account No' },
+  { id: 'amount', label: 'Amount' },
+  { id: 'letter_no', label: 'Letter No' },
+  { id: 'application_date', label: 'Date' },
+  { id: 'transfer_date', label: 'Transfer Date' },
+  { id: 'status', label: 'Status' },
+  { id: 'registration_year', label: 'Reg. Year' },
+  { id: 'remarks', label: 'Remarks' },
+]
+const VISIBLE_COLS_STORAGE_KEY = 'subsidy_status_visible_columns'
+
 function statusClasses(status: string) {
   const s = status || ''
   if (/success/i.test(s)) return 'text-green-700 bg-green-100'
@@ -109,11 +126,32 @@ export default function SubsidyStatusPage() {
 
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false)
+  const [showRemoveDuplicatesConfirm, setShowRemoveDuplicatesConfirm] = useState(false)
+  const [removingDuplicates, setRemovingDuplicates] = useState(false)
+
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(COLUMNS.map(c => [c.id, true]))
+  )
+  const [showColPicker, setShowColPicker] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem(VISIBLE_COLS_STORAGE_KEY)
+    if (saved) {
+      try { setVisibleCols(prev => ({ ...prev, ...JSON.parse(saved) })) } catch {}
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(VISIBLE_COLS_STORAGE_KEY, JSON.stringify(visibleCols))
+  }, [visibleCols])
 
   const [pinAction, setPinAction] = useState<null
     | { type: 'edit'; entry: SubsidyStatus }
     | { type: 'delete'; id: number }
-    | { type: 'deleteAll' }>(null)
+    | { type: 'deleteAll' }
+    | { type: 'removeDuplicates' }>(null)
 
   useEffect(() => { fetchEntries() }, [])
 
@@ -140,9 +178,37 @@ export default function SubsidyStatusPage() {
 
   const totalAmount = useMemo(() => entries.reduce((sum, e) => sum + (e.amount || 0), 0), [entries])
 
+  // Counts how many times each vehicle number appears (entries can be
+  // re-imported/re-added over time and end up duplicated).
+  const duplicateCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    entries.forEach(e => { counts[e.vehicle_no] = (counts[e.vehicle_no] || 0) + 1 })
+    return counts
+  }, [entries])
+
+  const duplicateVehicleCount = useMemo(
+    () => Object.values(duplicateCounts).filter(c => c > 1).length,
+    [duplicateCounts]
+  )
+
+  // For each vehicle number that appears more than once, keeps the
+  // earliest-saved row (lowest id) and marks the rest for removal.
+  const duplicateIdsToRemove = useMemo(() => {
+    const groups: Record<string, SubsidyStatus[]> = {}
+    entries.forEach(e => { (groups[e.vehicle_no] ||= []).push(e) })
+    const ids: number[] = []
+    Object.values(groups).forEach(group => {
+      if (group.length < 2) return
+      const sorted = [...group].sort((a, b) => (a.id ?? 0) - (b.id ?? 0))
+      sorted.slice(1).forEach(e => { if (e.id != null) ids.push(e.id) })
+    })
+    return ids
+  }, [entries])
+
   const filtered = useMemo(() => {
     return entries.filter(e => {
       if (statusFilter && e.status !== statusFilter) return false
+      if (showDuplicatesOnly && duplicateCounts[e.vehicle_no] <= 1) return false
       if (search.trim()) {
         const q = search.trim().toLowerCase()
         const hay = Object.values(e).join(' ').toLowerCase()
@@ -150,17 +216,77 @@ export default function SubsidyStatusPage() {
       }
       return true
     })
-  }, [entries, search, statusFilter])
+  }, [entries, search, statusFilter, showDuplicatesOnly, duplicateCounts])
 
   function requestEdit(entry: SubsidyStatus) { setPinAction({ type: 'edit', entry }) }
   function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
   function requestDeleteAll() { setPinAction({ type: 'deleteAll' }) }
+  function requestRemoveDuplicates() { setPinAction({ type: 'removeDuplicates' }) }
   function onPinSuccess() {
     if (!pinAction) return
     if (pinAction.type === 'edit') openEdit(pinAction.entry)
     else if (pinAction.type === 'delete') setDeleteId(pinAction.id)
     else if (pinAction.type === 'deleteAll') setShowDeleteAll(true)
+    else if (pinAction.type === 'removeDuplicates') setShowRemoveDuplicatesConfirm(true)
     setPinAction(null)
+  }
+
+  // Keeps the earliest-saved copy of each vehicle number and deletes the
+  // rest, then re-fetches and verifies every distinct vehicle number from
+  // before is still present — only the extra copies vanish.
+  async function handleRemoveDuplicates() {
+    if (duplicateIdsToRemove.length === 0) { setShowRemoveDuplicatesConfirm(false); return }
+    setRemovingDuplicates(true)
+
+    const distinctBefore = new Set(entries.map(e => e.vehicle_no))
+    const idsToRemove = new Set(duplicateIdsToRemove)
+
+    const CHUNK = 500
+    for (let i = 0; i < duplicateIdsToRemove.length; i += CHUNK) {
+      const chunk = duplicateIdsToRemove.slice(i, i + CHUNK)
+      const { error } = await supabase.from('subsidy_status').delete().in('id', chunk)
+      if (error) {
+        setRemovingDuplicates(false)
+        setShowRemoveDuplicatesConfirm(false)
+        showMsg('error', error.message)
+        fetchEntries()
+        return
+      }
+    }
+
+    const { data: freshData, error: refetchError } = await fetchAllRows<SubsidyStatus>('subsidy_status', 'created_at', false)
+    setRemovingDuplicates(false)
+    setShowRemoveDuplicatesConfirm(false)
+
+    if (refetchError) {
+      showMsg('error', `Deleted but could not verify: ${refetchError.message}`)
+      fetchEntries()
+      return
+    }
+
+    const after = freshData || []
+    const distinctAfter = new Set(after.map(e => e.vehicle_no))
+    const lostVehicles = [...distinctBefore].filter(v => !distinctAfter.has(v))
+    const stillHasRemovedId = after.some(e => e.id != null && idsToRemove.has(e.id))
+
+    setEntries(after)
+
+    if (lostVehicles.length > 0 || stillHasRemovedId) {
+      showMsg('error',
+        stillHasRemovedId
+          ? 'चेतावनी: कुछ duplicate रिकॉर्ड हटाए नहीं जा सके — दोबारा कोशिश करें।'
+          : `चेतावनी: ${lostVehicles.length} वाहन नंबर पूरी तरह गायब हो गए (यह नहीं होना चाहिए था): ${lostVehicles.slice(0, 5).join(', ')}। कृपया तुरंत जाँच करें।`
+      )
+    } else {
+      showMsg('success', `${duplicateIdsToRemove.length} duplicate रिकॉर्ड हटाए गए — सभी ${distinctBefore.size} मूल वाहन नंबर सुरक्षित हैं (सत्यापित)।`)
+    }
+  }
+
+  function copyAll() {
+    const text = filtered.map(e => [e.vehicle_no, e.owner_name, e.mobile_no, e.status].filter(Boolean).join('\t')).join('\n')
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   function openAdd() {
@@ -362,6 +488,52 @@ export default function SubsidyStatusPage() {
             <button onClick={() => window.print()} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
               🖨 Print
             </button>
+            <button onClick={copyAll} disabled={filtered.length === 0} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition disabled:opacity-40">
+              {copied ? '✅ Copied!' : '📋 Copy All'}
+            </button>
+            <button
+              onClick={() => setShowDuplicatesOnly(v => !v)}
+              className={`px-4 py-2 rounded-lg border text-sm font-medium transition ${showDuplicatesOnly ? 'bg-amber-600 border-amber-600 text-white hover:bg-amber-700' : 'border-amber-300 text-amber-700 hover:bg-amber-50'}`}
+            >
+              🔁 Check Duplicate Values {duplicateVehicleCount > 0 && `(${duplicateVehicleCount})`}
+            </button>
+            <button
+              onClick={requestRemoveDuplicates}
+              disabled={duplicateIdsToRemove.length === 0}
+              className="px-4 py-2 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 transition disabled:opacity-40"
+            >
+              🧹 Remove Duplicate Values {duplicateIdsToRemove.length > 0 && `(${duplicateIdsToRemove.length})`}
+            </button>
+            <div className="relative">
+              <button onClick={() => setShowColPicker(v => !v)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition">
+                ⚙ कॉलम
+              </button>
+              {showColPicker && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowColPicker(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-56 max-h-80 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-2">
+                    <div className="flex justify-between items-center px-2 py-1 mb-1 border-b border-gray-100">
+                      <span className="text-xs font-semibold text-gray-500">दिखाएँ / छिपाएँ</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => setVisibleCols(Object.fromEntries(COLUMNS.map(c => [c.id, true])))} className="text-xs text-blue-700 hover:underline">All</button>
+                        <button onClick={() => setVisibleCols(Object.fromEntries(COLUMNS.map(c => [c.id, false])))} className="text-xs text-blue-700 hover:underline">None</button>
+                      </div>
+                    </div>
+                    {COLUMNS.map(col => (
+                      <label key={col.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm">
+                        <input
+                          type="checkbox"
+                          checked={visibleCols[col.id] !== false}
+                          onChange={e => setVisibleCols(prev => ({ ...prev, [col.id]: e.target.checked }))}
+                          className="w-4 h-4 accent-blue-700"
+                        />
+                        {col.label}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <button onClick={openAdd} className="px-4 py-2 rounded-lg bg-blue-900 text-white text-sm font-medium hover:bg-blue-800 transition">
               + Add Entry
             </button>
@@ -415,32 +587,45 @@ export default function SubsidyStatusPage() {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="bg-blue-900 text-white">
-                  {['#', 'Vehicle No', 'Owner Name', 'Mobile No', 'Category', 'IFSC', 'Account No', 'Amount', 'Letter No', 'Date', 'Transfer Date', 'Status', 'Reg. Year', 'Remarks', 'Actions'].map(h => (
-                    <th key={h} className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">{h}</th>
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">#</th>
+                  {COLUMNS.filter(c => visibleCols[c.id] !== false).map(col => (
+                    <th key={col.id} className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">{col.label}</th>
                   ))}
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs no-print">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={15} className="text-center py-10 text-gray-400">No entries found</td></tr>
+                  <tr><td colSpan={COLUMNS.filter(c => visibleCols[c.id] !== false).length + 2} className="text-center py-10 text-gray-400">No entries found</td></tr>
                 ) : filtered.map((entry, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{entries.findIndex(e => e.id === entry.id) + 1}</td>
-                    <td className="px-3 py-2 text-xs font-mono font-semibold text-blue-900 whitespace-nowrap">{entry.vehicle_no}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.owner_name || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.mobile_no || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.category || '—'}</td>
-                    <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">{entry.ifsc || '—'}</td>
-                    <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">{entry.account_no || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.amount != null ? `₹${entry.amount.toLocaleString('en-IN')}` : '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.letter_no || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.application_date) || '—'}</td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.transfer_date) || '—'}</td>
-                    <td className="px-3 py-2 text-xs">
-                      <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${statusClasses(entry.status)}`}>{entry.status}</span>
-                    </td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.registration_year || '—'}</td>
-                    <td className="px-3 py-2 text-xs max-w-[200px] whitespace-pre-line">{entry.remarks || '—'}</td>
+                    {visibleCols.vehicle_no !== false && (
+                      <td className="px-3 py-2 text-xs font-mono font-semibold text-blue-900 whitespace-nowrap">
+                        {entry.vehicle_no}
+                        {duplicateCounts[entry.vehicle_no] > 1 && (
+                          <span className="ml-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">
+                            ×{duplicateCounts[entry.vehicle_no]}
+                          </span>
+                        )}
+                      </td>
+                    )}
+                    {visibleCols.owner_name !== false && <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.owner_name || '—'}</td>}
+                    {visibleCols.mobile_no !== false && <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.mobile_no || '—'}</td>}
+                    {visibleCols.category !== false && <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.category || '—'}</td>}
+                    {visibleCols.ifsc !== false && <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">{entry.ifsc || '—'}</td>}
+                    {visibleCols.account_no !== false && <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">{entry.account_no || '—'}</td>}
+                    {visibleCols.amount !== false && <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.amount != null ? `₹${entry.amount.toLocaleString('en-IN')}` : '—'}</td>}
+                    {visibleCols.letter_no !== false && <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.letter_no || '—'}</td>}
+                    {visibleCols.application_date !== false && <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.application_date) || '—'}</td>}
+                    {visibleCols.transfer_date !== false && <td className="px-3 py-2 text-xs whitespace-nowrap">{fromISODate(entry.transfer_date) || '—'}</td>}
+                    {visibleCols.status !== false && (
+                      <td className="px-3 py-2 text-xs">
+                        <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${statusClasses(entry.status)}`}>{entry.status}</span>
+                      </td>
+                    )}
+                    {visibleCols.registration_year !== false && <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.registration_year || '—'}</td>}
+                    {visibleCols.remarks !== false && <td className="px-3 py-2 text-xs max-w-[200px] whitespace-pre-line">{entry.remarks || '—'}</td>}
                     <td className="px-3 py-2 text-xs no-print">
                       <div className="flex gap-1">
                         <button onClick={() => requestEdit(entry)} className="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium">Edit</button>
@@ -659,7 +844,12 @@ export default function SubsidyStatusPage() {
       {/* PIN Modal */}
       {pinAction && (
         <PinModal
-          action={pinAction.type === 'edit' ? 'edit this entry' : pinAction.type === 'delete' ? 'delete this entry' : 'delete ALL records'}
+          action={
+            pinAction.type === 'edit' ? 'edit this entry'
+              : pinAction.type === 'delete' ? 'delete this entry'
+              : pinAction.type === 'deleteAll' ? 'delete ALL records'
+              : 'remove duplicate records'
+          }
           onSuccess={onPinSuccess}
           onCancel={() => setPinAction(null)}
         />
@@ -690,6 +880,25 @@ export default function SubsidyStatusPage() {
               <button onClick={() => setShowDeleteAll(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Cancel</button>
               <button onClick={handleDeleteAll} disabled={deletingAll} className="px-5 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-60">
                 {deletingAll ? 'Deleting...' : 'Yes, Delete All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Duplicates Confirm */}
+      {showRemoveDuplicatesConfirm && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border-2 border-red-500">
+            <h3 className="text-xl font-bold text-red-700 mb-2">🧹 Remove Duplicate Values?</h3>
+            <p className="text-sm text-gray-700 mb-1">
+              हर वाहन नंबर की सबसे पहली एंट्री रखी जाएगी, बाकी <strong>{duplicateIdsToRemove.length} duplicate रिकॉर्ड</strong> हटा दिए जाएंगे।
+            </p>
+            <p className="text-sm text-red-600 font-semibold mb-5">This action cannot be undone!</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowRemoveDuplicatesConfirm(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={handleRemoveDuplicates} disabled={removingDuplicates} className="px-5 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-60">
+                {removingDuplicates ? 'Removing...' : 'Yes, Remove Duplicates'}
               </button>
             </div>
           </div>

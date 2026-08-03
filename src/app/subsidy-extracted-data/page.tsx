@@ -5,6 +5,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase, EvExtractedData, fetchAllRows } from '@/lib/supabase'
 import PinModal from '@/components/PinModal'
 
+const COLUMNS = [
+  { id: 'vehicle_no', label: 'Vehicle No' },
+  { id: 'created_at', label: 'Saved On' },
+]
+const VISIBLE_COLS_STORAGE_KEY = 'ev_extracted_data_visible_columns'
+
 export default function SubsidyExtractedDataPage() {
   const [entries, setEntries] = useState<EvExtractedData[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,6 +32,22 @@ export default function SubsidyExtractedDataPage() {
 
   const [showRemoveDuplicatesConfirm, setShowRemoveDuplicatesConfirm] = useState(false)
   const [removingDuplicates, setRemovingDuplicates] = useState(false)
+
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(COLUMNS.map(c => [c.id, true]))
+  )
+  const [showColPicker, setShowColPicker] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem(VISIBLE_COLS_STORAGE_KEY)
+    if (saved) {
+      try { setVisibleCols(prev => ({ ...prev, ...JSON.parse(saved) })) } catch {}
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(VISIBLE_COLS_STORAGE_KEY, JSON.stringify(visibleCols))
+  }, [visibleCols])
 
   const [pinAction, setPinAction] = useState<null
     | { type: 'delete'; id: number }
@@ -250,6 +272,36 @@ export default function SubsidyExtractedDataPage() {
             >
               {showCG05Only ? '🎯 सिर्फ CG05 (डिफ़ॉल्ट)' : '🌐 सभी वाहन (Full Numbers)'}
             </button>
+            <div className="relative">
+              <button onClick={() => setShowColPicker(v => !v)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition">
+                ⚙ कॉलम
+              </button>
+              {showColPicker && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowColPicker(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-56 max-h-80 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-2">
+                    <div className="flex justify-between items-center px-2 py-1 mb-1 border-b border-gray-100">
+                      <span className="text-xs font-semibold text-gray-500">दिखाएँ / छिपाएँ</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => setVisibleCols(Object.fromEntries(COLUMNS.map(c => [c.id, true])))} className="text-xs text-blue-700 hover:underline">All</button>
+                        <button onClick={() => setVisibleCols(Object.fromEntries(COLUMNS.map(c => [c.id, false])))} className="text-xs text-blue-700 hover:underline">None</button>
+                      </div>
+                    </div>
+                    {COLUMNS.map(col => (
+                      <label key={col.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm">
+                        <input
+                          type="checkbox"
+                          checked={visibleCols[col.id] !== false}
+                          onChange={e => setVisibleCols(prev => ({ ...prev, [col.id]: e.target.checked }))}
+                          className="w-4 h-4 accent-blue-700"
+                        />
+                        {col.label}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -322,26 +374,32 @@ export default function SubsidyExtractedDataPage() {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="bg-blue-900 text-white">
-                  {['#', 'Vehicle No', 'Saved On', 'Actions'].map(h => (
-                    <th key={h} className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">{h}</th>
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">#</th>
+                  {COLUMNS.filter(c => visibleCols[c.id] !== false).map(col => (
+                    <th key={col.id} className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">{col.label}</th>
                   ))}
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {paginated.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center py-10 text-gray-400">No entries found</td></tr>
+                  <tr><td colSpan={COLUMNS.filter(c => visibleCols[c.id] !== false).length + 2} className="text-center py-10 text-gray-400">No entries found</td></tr>
                 ) : paginated.map((entry, i) => (
                   <tr key={entry.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{pageSize === 'all' ? i + 1 : (currentPage - 1) * pageSize + i + 1}</td>
-                    <td className="px-3 py-2 text-sm font-mono font-semibold text-blue-900 whitespace-nowrap">
-                      {entry.vehicle_no}
-                      {duplicateCounts[entry.vehicle_no] > 1 && (
-                        <span className="ml-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">
-                          ×{duplicateCounts[entry.vehicle_no]}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-IN') : '—'}</td>
+                    {visibleCols.vehicle_no !== false && (
+                      <td className="px-3 py-2 text-sm font-mono font-semibold text-blue-900 whitespace-nowrap">
+                        {entry.vehicle_no}
+                        {duplicateCounts[entry.vehicle_no] > 1 && (
+                          <span className="ml-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">
+                            ×{duplicateCounts[entry.vehicle_no]}
+                          </span>
+                        )}
+                      </td>
+                    )}
+                    {visibleCols.created_at !== false && (
+                      <td className="px-3 py-2 text-xs whitespace-nowrap">{entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-IN') : '—'}</td>
+                    )}
                     <td className="px-3 py-2 text-xs">
                       <button onClick={() => requestDelete(entry.id!)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
                     </td>
