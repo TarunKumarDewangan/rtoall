@@ -244,3 +244,9 @@ export type EvExcelStatusData = {
   batch_name: string
   created_at?: string
 }
+
+export type EvFinalV1Row = {
+  id?: number
+  row_data: Record<string, string>
+  created_at?: string
+}

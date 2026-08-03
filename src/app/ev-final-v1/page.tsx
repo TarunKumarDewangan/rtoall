@@ -1,0 +1,355 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { supabase, EvFinalV1Row, fetchAllRows } from '@/lib/supabase'
+import PinModal from '@/components/PinModal'
+
+// Expects the first pasted line to be a tab-separated header row (exactly
+// what Excel gives you when you copy a range including its header), and
+// every following line to be a data row with the same column order. No
+// fixed schema — whatever headers show up become that row's JSON keys, so
+// this works for any wide export (vehicle registration, bank data, etc.)
+// without needing a new table/page built for every different column set.
+function parseTable(text: string): { headers: string[]; rows: Record<string, string>[] } {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== '')
+  if (lines.length === 0) return { headers: [], rows: [] }
+  const headers = lines[0].split('\t').map((h, i) => h.trim() || `Column ${i + 1}`)
+  const rows = lines.slice(1).map(line => {
+    const cols = line.split('\t')
+    const obj: Record<string, string> = {}
+    headers.forEach((h, i) => { obj[h] = (cols[i] ?? '').trim() })
+    return obj
+  })
+  return { headers, rows }
+}
+
+// Union of every key seen across all saved rows, in first-seen order — a
+// later paste with extra/different columns just extends the table instead
+// of breaking it.
+function computeColumns(rows: EvFinalV1Row[]): string[] {
+  const seen = new Set<string>()
+  const cols: string[] = []
+  rows.forEach(r => {
+    Object.keys(r.row_data || {}).forEach(k => {
+      if (!seen.has(k)) { seen.add(k); cols.push(k) }
+    })
+  })
+  return cols
+}
+
+const SAVE_CHUNK_SIZE = 300 // wide rows -> smaller chunks to stay under payload limits
+
+export default function EvFinalV1Page() {
+  const [input, setInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveProgress, setSaveProgress] = useState<{ done: number; total: number } | null>(null)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  const [savedRows, setSavedRows] = useState<EvFinalV1Row[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [pageSize, setPageSize] = useState<number | 'all'>(50)
+  const [page, setPage] = useState(1)
+
+  const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [showDeleteAll, setShowDeleteAll] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
+  const [pinAction, setPinAction] = useState<null | { type: 'delete'; id: number } | { type: 'deleteAll' }>(null)
+
+  const parsed = useMemo(() => parseTable(input), [input])
+
+  useEffect(() => { fetchSaved() }, [])
+
+  async function fetchSaved() {
+    setLoading(true)
+    const { data, error } = await fetchAllRows<EvFinalV1Row>('ev_final_v1', 'created_at', false)
+    if (error) showMsg('error', error.message)
+    else setSavedRows(data || [])
+    setLoading(false)
+  }
+
+  function showMsg(type: 'success' | 'error', text: string) {
+    setMessage({ type, text })
+    setTimeout(() => setMessage(null), 4000)
+  }
+
+  async function handleSave() {
+    if (parsed.rows.length === 0) return
+    setSaving(true)
+    setSaveProgress({ done: 0, total: parsed.rows.length })
+
+    const payload = parsed.rows.map(row_data => ({ row_data }))
+    for (let i = 0; i < payload.length; i += SAVE_CHUNK_SIZE) {
+      const chunk = payload.slice(i, i + SAVE_CHUNK_SIZE)
+      const { error } = await supabase.from('ev_final_v1').insert(chunk)
+      if (error) {
+        setSaving(false)
+        setSaveProgress(null)
+        showMsg('error', error.message)
+        return
+      }
+      setSaveProgress({ done: Math.min(i + SAVE_CHUNK_SIZE, payload.length), total: payload.length })
+    }
+
+    setSaving(false)
+    setSaveProgress(null)
+    showMsg('success', `${payload.length} पंक्तियाँ सेव हुईं।`)
+    setInput('')
+    fetchSaved()
+  }
+
+  const columns = useMemo(() => computeColumns(savedRows), [savedRows])
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return savedRows
+    const q = search.trim().toLowerCase()
+    return savedRows.filter(r => Object.values(r.row_data || {}).some(v => String(v).toLowerCase().includes(q)))
+  }, [savedRows, search])
+
+  useEffect(() => { setPage(1) }, [search, pageSize])
+
+  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const paginated = useMemo(() => {
+    if (pageSize === 'all') return filtered
+    const start = (currentPage - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, pageSize, currentPage])
+
+  function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
+  function requestDeleteAll() { setPinAction({ type: 'deleteAll' }) }
+  function onPinSuccess() {
+    if (!pinAction) return
+    if (pinAction.type === 'delete') setDeleteId(pinAction.id)
+    else setShowDeleteAll(true)
+    setPinAction(null)
+  }
+
+  async function handleDelete(id: number) {
+    const { error } = await supabase.from('ev_final_v1').delete().eq('id', id)
+    setDeleteId(null)
+    if (error) showMsg('error', error.message)
+    else { showMsg('success', 'Deleted.'); fetchSaved() }
+  }
+
+  async function handleDeleteAll() {
+    setDeletingAll(true)
+    const { error } = await supabase.from('ev_final_v1').delete().neq('id', 0)
+    setDeletingAll(false)
+    setShowDeleteAll(false)
+    if (error) showMsg('error', error.message)
+    else { showMsg('success', 'All records deleted.'); fetchSaved() }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="w-full px-4 py-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-blue-900">EV Final V1</h1>
+          <p className="text-sm text-gray-500 mt-0.5">पहली पंक्ति हेडर होनी चाहिए — Excel से पूरी टेबल (हेडर सहित) कॉपी-पेस्ट करें, कोई भी कॉलम-सेट चलेगा</p>
+        </div>
+
+        {message && (
+          <div className={`mb-4 px-4 py-3 rounded-lg text-sm font-medium ${message.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+            {message.text}
+          </div>
+        )}
+
+        {/* Paste + Preview */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+          <label className="block text-xs font-semibold text-gray-600 mb-1">यहाँ Excel डेटा पेस्ट करें (हेडर रो सहित)</label>
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            rows={8}
+            placeholder="Chassis Number	Owner Name	Father Name	...  ← पहली पंक्ति हेडर होनी चाहिए"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-300"
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
+            <p className="text-xs text-gray-500">
+              {parsed.headers.length > 0
+                ? `${parsed.headers.length} कॉलम पहचाने गए, ${parsed.rows.length} पंक्ति(याँ) तैयार`
+                : 'डेटा पेस्ट करने का इंतज़ार'}
+            </p>
+            <div className="flex gap-2">
+              {input && (
+                <button onClick={() => setInput('')} className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs hover:bg-gray-50">
+                  Clear
+                </button>
+              )}
+              <button
+                onClick={handleSave}
+                disabled={parsed.rows.length === 0 || saving}
+                className="px-4 py-2 rounded-lg bg-blue-900 text-white text-sm font-medium hover:bg-blue-800 transition disabled:opacity-40"
+              >
+                {saving ? `Saving... ${saveProgress ? `(${saveProgress.done}/${saveProgress.total})` : ''}` : '🗄️ Save to Database'}
+              </button>
+            </div>
+          </div>
+
+          {parsed.rows.length > 0 && (
+            <div className="mt-4 overflow-x-auto border border-gray-200 rounded-lg" style={{ maxHeight: '260px' }}>
+              <table className="text-xs">
+                <thead>
+                  <tr className="bg-gray-100">
+                    {parsed.headers.map(h => (
+                      <th key={h} className="px-2 py-1.5 text-left font-semibold text-gray-600 whitespace-nowrap border-b border-gray-200">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {parsed.rows.slice(0, 20).map((row, i) => (
+                    <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      {parsed.headers.map(h => (
+                        <td key={h} className="px-2 py-1.5 whitespace-nowrap border-b border-gray-100">{row[h] || '—'}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {parsed.rows.length > 20 && (
+                <p className="text-xs text-gray-400 px-2 py-1.5">... और {parsed.rows.length - 20} पंक्तियाँ (preview सिर्फ पहली 20 दिखाता है)</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Saved Data */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-lg font-bold text-blue-900">Saved Data</h2>
+            <p className="text-xs text-gray-500">Total: {filtered.length} रिकॉर्ड</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={requestDeleteAll} className="px-4 py-2 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 transition">
+              🗑️ Delete All
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-3">
+          <input
+            type="text"
+            placeholder="किसी भी कॉलम में खोजें..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[220px] focus:outline-none focus:ring-2 focus:ring-blue-300"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Reset</button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-gray-500">हर पेज में दिखाएँ:</span>
+            <select
+              value={pageSize}
+              onChange={e => setPageSize(e.target.value === 'all' ? 'all' : parseInt(e.target.value, 10))}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+            >
+              {[50, 100, 200, 300, 400, 500, 1000, 5000, 10000].map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+              <option value="all">Full View (सभी)</option>
+            </select>
+          </div>
+          {pageSize !== 'all' && totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs font-medium hover:bg-gray-50 disabled:opacity-40">← Prev</button>
+              <span className="text-xs text-gray-600">Page {currentPage} / {totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs font-medium hover:bg-gray-50 disabled:opacity-40">Next →</button>
+            </div>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="text-center py-16 text-gray-400">Loading...</div>
+        ) : columns.length === 0 ? (
+          <div className="text-center py-16 text-gray-400 bg-white border border-gray-200 rounded-xl">अभी तक कोई डेटा सेव नहीं हुआ</div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+            <table className="text-sm">
+              <thead>
+                <tr className="bg-blue-900 text-white">
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">#</th>
+                  {columns.map(c => (
+                    <th key={c} className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">{c}</th>
+                  ))}
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.length === 0 ? (
+                  <tr><td colSpan={columns.length + 2} className="text-center py-10 text-gray-400">No records found</td></tr>
+                ) : paginated.map((r, i) => (
+                  <tr key={r.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 text-xs text-gray-500">{pageSize === 'all' ? i + 1 : (currentPage - 1) * pageSize + i + 1}</td>
+                    {columns.map(c => (
+                      <td key={c} className="px-3 py-2 text-xs whitespace-nowrap max-w-[260px] truncate" title={r.row_data?.[c]}>{r.row_data?.[c] || '—'}</td>
+                    ))}
+                    <td className="px-3 py-2 text-xs">
+                      <button onClick={() => requestDelete(r.id!)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {pageSize !== 'all' && totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-3">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs font-medium hover:bg-gray-50 disabled:opacity-40">← Prev</button>
+            <span className="text-xs text-gray-600">Page {currentPage} / {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs font-medium hover:bg-gray-50 disabled:opacity-40">Next →</button>
+          </div>
+        )}
+      </div>
+
+      {/* PIN Modal */}
+      {pinAction && (
+        <PinModal
+          action={pinAction.type === 'delete' ? 'delete this record' : 'delete ALL records'}
+          onSuccess={onPinSuccess}
+          onCancel={() => setPinAction(null)}
+        />
+      )}
+
+      {/* Delete Single Confirm */}
+      {deleteId !== null && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-bold text-red-700 mb-2">Confirm Delete</h3>
+            <p className="text-sm text-gray-600 mb-5">Are you sure you want to delete this record?</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={() => handleDelete(deleteId)} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete ALL Confirm */}
+      {showDeleteAll && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border-2 border-red-500">
+            <h3 className="text-xl font-bold text-red-700 mb-2">⚠️ Delete ALL Records?</h3>
+            <p className="text-sm text-gray-700 mb-1">This will permanently delete <strong>all {savedRows.length} records</strong>.</p>
+            <p className="text-sm text-red-600 font-semibold mb-5">This action cannot be undone!</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowDeleteAll(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDeleteAll} disabled={deletingAll} className="px-5 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-60">
+                {deletingAll ? 'Deleting...' : 'Yes, Delete All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

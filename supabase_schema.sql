@@ -239,6 +239,16 @@ CREATE TABLE IF NOT EXISTS ev_excel_status_data (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 13. EV Final V1 — paste any wide tab-separated export (vehicle registration
+-- data, bank data, whatever) with a header row, and every row is stored as a
+-- JSONB object keyed by whatever those headers were. No fixed column list,
+-- since real RTO exports have 20-30+ columns and the set can vary by export.
+CREATE TABLE IF NOT EXISTS ev_final_v1 (
+  id SERIAL PRIMARY KEY,
+  row_data JSONB NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
 
@@ -257,6 +267,7 @@ CREATE POLICY "Allow all" ON complaints_v2 FOR ALL USING (true) WITH CHECK (true
 CREATE POLICY "Allow all" ON modify_status FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON ev_extracted_data FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON ev_excel_status_data FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON ev_final_v1 FOR ALL USING (true) WITH CHECK (true);
 
 -- Enable RLS on all tables
 ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
@@ -272,3 +283,4 @@ ALTER TABLE complaints_v2 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE modify_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ev_extracted_data ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ev_excel_status_data ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ev_final_v1 ENABLE ROW LEVEL SECURITY;
