@@ -57,10 +57,15 @@ export default function EvFinalV1Page() {
   const [pageSize, setPageSize] = useState<number | 'all'>(50)
   const [page, setPage] = useState(1)
 
+  const [dupColumn, setDupColumn] = useState('') // which column counts as the "identity" for duplicate detection
+  const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false)
+  const [showRemoveDuplicatesConfirm, setShowRemoveDuplicatesConfirm] = useState(false)
+  const [removingDuplicates, setRemovingDuplicates] = useState(false)
+
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
-  const [pinAction, setPinAction] = useState<null | { type: 'delete'; id: number } | { type: 'deleteAll' }>(null)
+  const [pinAction, setPinAction] = useState<null | { type: 'delete'; id: number } | { type: 'deleteAll' } | { type: 'removeDuplicates' }>(null)
 
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({})
   const [showColPicker, setShowColPicker] = useState(false)
@@ -155,6 +160,47 @@ export default function EvFinalV1Page() {
     return savedRows.some(r => yearOf(r.row_data?.[filterColumn] || ''))
   }, [savedRows, filterColumn])
 
+  // Counts how many rows share the same (non-empty) value in the chosen
+  // "identity" column — since ev_final_v1 has no fixed schema, the user
+  // picks which column actually identifies a unique record (e.g. Chassis
+  // Number or Registration Number) rather than assuming one.
+  const duplicateCounts = useMemo(() => {
+    if (!dupColumn) return {}
+    const counts: Record<string, number> = {}
+    savedRows.forEach(r => {
+      const v = r.row_data?.[dupColumn]
+      if (!v) return
+      counts[v] = (counts[v] || 0) + 1
+    })
+    return counts
+  }, [savedRows, dupColumn])
+
+  const duplicateValueCount = useMemo(
+    () => Object.values(duplicateCounts).filter(c => c > 1).length,
+    [duplicateCounts]
+  )
+
+  // For each duplicate value, keeps the earliest-saved row (lowest id)
+  // and marks the rest for removal.
+  const duplicateIdsToRemove = useMemo(() => {
+    if (!dupColumn) return []
+    const groups: Record<string, EvFinalV1Row[]> = {}
+    savedRows.forEach(r => {
+      const v = r.row_data?.[dupColumn]
+      if (!v) return
+      ;(groups[v] ||= []).push(r)
+    })
+    const ids: number[] = []
+    Object.values(groups).forEach(group => {
+      if (group.length < 2) return
+      const sorted = [...group].sort((a, b) => (a.id ?? 0) - (b.id ?? 0))
+      sorted.slice(1).forEach(r => { if (r.id != null) ids.push(r.id) })
+    })
+    return ids
+  }, [savedRows, dupColumn])
+
+  useEffect(() => { setShowDuplicatesOnly(false) }, [dupColumn])
+
   const filtered = useMemo(() => {
     let rows = savedRows
 
@@ -166,6 +212,10 @@ export default function EvFinalV1Page() {
       })
     }
 
+    if (dupColumn && showDuplicatesOnly) {
+      rows = rows.filter(r => (duplicateCounts[r.row_data?.[dupColumn] || ''] || 0) > 1)
+    }
+
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       rows = rows.filter(r => {
@@ -175,9 +225,9 @@ export default function EvFinalV1Page() {
     }
 
     return rows
-  }, [savedRows, search, searchColumn, filterColumn, filterValues, filterByYear])
+  }, [savedRows, search, searchColumn, filterColumn, filterValues, filterByYear, dupColumn, showDuplicatesOnly, duplicateCounts])
 
-  useEffect(() => { setPage(1) }, [search, searchColumn, filterColumn, filterValues, filterByYear, pageSize])
+  useEffect(() => { setPage(1) }, [search, searchColumn, filterColumn, filterValues, filterByYear, dupColumn, showDuplicatesOnly, pageSize])
 
   const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -189,11 +239,64 @@ export default function EvFinalV1Page() {
 
   function requestDelete(id: number) { setPinAction({ type: 'delete', id }) }
   function requestDeleteAll() { setPinAction({ type: 'deleteAll' }) }
+  function requestRemoveDuplicates() { setPinAction({ type: 'removeDuplicates' }) }
   function onPinSuccess() {
     if (!pinAction) return
     if (pinAction.type === 'delete') setDeleteId(pinAction.id)
-    else setShowDeleteAll(true)
+    else if (pinAction.type === 'deleteAll') setShowDeleteAll(true)
+    else if (pinAction.type === 'removeDuplicates') setShowRemoveDuplicatesConfirm(true)
     setPinAction(null)
+  }
+
+  // Keeps the earliest-saved row per duplicate value in dupColumn and
+  // deletes the rest, then re-fetches and verifies every distinct value
+  // from before is still present — only the extra copies vanish.
+  async function handleRemoveDuplicates() {
+    if (!dupColumn || duplicateIdsToRemove.length === 0) { setShowRemoveDuplicatesConfirm(false); return }
+    setRemovingDuplicates(true)
+
+    const distinctBefore = new Set(savedRows.map(r => r.row_data?.[dupColumn]).filter(Boolean))
+    const idsToRemove = new Set(duplicateIdsToRemove)
+
+    const CHUNK = 300
+    for (let i = 0; i < duplicateIdsToRemove.length; i += CHUNK) {
+      const chunk = duplicateIdsToRemove.slice(i, i + CHUNK)
+      const { error } = await supabase.from('ev_final_v1').delete().in('id', chunk)
+      if (error) {
+        setRemovingDuplicates(false)
+        setShowRemoveDuplicatesConfirm(false)
+        showMsg('error', error.message)
+        fetchSaved()
+        return
+      }
+    }
+
+    const { data: freshData, error: refetchError } = await fetchAllRows<EvFinalV1Row>('ev_final_v1', 'created_at', false)
+    setRemovingDuplicates(false)
+    setShowRemoveDuplicatesConfirm(false)
+
+    if (refetchError) {
+      showMsg('error', `Deleted but could not verify: ${refetchError.message}`)
+      fetchSaved()
+      return
+    }
+
+    const after = freshData || []
+    const distinctAfter = new Set(after.map(r => r.row_data?.[dupColumn]).filter(Boolean))
+    const lostValues = [...distinctBefore].filter(v => !distinctAfter.has(v))
+    const stillHasRemovedId = after.some(r => r.id != null && idsToRemove.has(r.id))
+
+    setSavedRows(after)
+
+    if (lostValues.length > 0 || stillHasRemovedId) {
+      showMsg('error',
+        stillHasRemovedId
+          ? 'चेतावनी: कुछ duplicate रिकॉर्ड हटाए नहीं जा सके — दोबारा कोशिश करें।'
+          : `चेतावनी: ${lostValues.length} मान पूरी तरह गायब हो गए (यह नहीं होना चाहिए था): ${lostValues.slice(0, 5).join(', ')}। कृपया तुरंत जाँच करें।`
+      )
+    } else {
+      showMsg('success', `${duplicateIdsToRemove.length} duplicate रिकॉर्ड हटाए गए — सभी ${distinctBefore.size} मूल मान सुरक्षित हैं (सत्यापित)।`)
+    }
   }
 
   async function handleDelete(id: number) {
@@ -419,6 +522,35 @@ export default function EvFinalV1Page() {
           )}
         </div>
 
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="text-xs font-semibold text-gray-500">Duplicate check कॉलम:</span>
+          <select
+            value={dupColumn}
+            onChange={e => setDupColumn(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
+            <option value="">-- कॉलम चुनें (जैसे Chassis Number / Registration Number) --</option>
+            {columns.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {dupColumn && (
+            <>
+              <button
+                onClick={() => setShowDuplicatesOnly(v => !v)}
+                className={`px-4 py-2 rounded-lg border text-sm font-medium transition ${showDuplicatesOnly ? 'bg-amber-600 border-amber-600 text-white hover:bg-amber-700' : 'border-amber-300 text-amber-700 hover:bg-amber-50'}`}
+              >
+                🔁 Check Duplicate Values {duplicateValueCount > 0 && `(${duplicateValueCount})`}
+              </button>
+              <button
+                onClick={requestRemoveDuplicates}
+                disabled={duplicateIdsToRemove.length === 0}
+                className="px-4 py-2 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 transition disabled:opacity-40"
+              >
+                🧹 Remove Duplicate Values {duplicateIdsToRemove.length > 0 && `(${duplicateIdsToRemove.length})`}
+              </button>
+            </>
+          )}
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-gray-500">हर पेज में दिखाएँ:</span>
@@ -467,7 +599,14 @@ export default function EvFinalV1Page() {
                   <tr key={r.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 text-xs text-gray-500">{pageSize === 'all' ? i + 1 : (currentPage - 1) * pageSize + i + 1}</td>
                     {columns.filter(c => visibleCols[c] !== false).map(c => (
-                      <td key={c} className="px-3 py-2 text-xs whitespace-nowrap max-w-[260px] truncate" title={r.row_data?.[c]}>{r.row_data?.[c] || '—'}</td>
+                      <td key={c} className="px-3 py-2 text-xs whitespace-nowrap max-w-[260px] truncate" title={r.row_data?.[c]}>
+                        {r.row_data?.[c] || '—'}
+                        {c === dupColumn && duplicateCounts[r.row_data?.[c] || ''] > 1 && (
+                          <span className="ml-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">
+                            ×{duplicateCounts[r.row_data?.[c] || '']}
+                          </span>
+                        )}
+                      </td>
                     ))}
                     <td className="px-3 py-2 text-xs">
                       <button onClick={() => requestDelete(r.id!)} className="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">Del</button>
@@ -493,7 +632,11 @@ export default function EvFinalV1Page() {
       {/* PIN Modal */}
       {pinAction && (
         <PinModal
-          action={pinAction.type === 'delete' ? 'delete this record' : 'delete ALL records'}
+          action={
+            pinAction.type === 'delete' ? 'delete this record'
+              : pinAction.type === 'deleteAll' ? 'delete ALL records'
+              : 'remove duplicate records'
+          }
           onSuccess={onPinSuccess}
           onCancel={() => setPinAction(null)}
         />
@@ -524,6 +667,25 @@ export default function EvFinalV1Page() {
               <button onClick={() => setShowDeleteAll(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Cancel</button>
               <button onClick={handleDeleteAll} disabled={deletingAll} className="px-5 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-60">
                 {deletingAll ? 'Deleting...' : 'Yes, Delete All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Duplicates Confirm */}
+      {showRemoveDuplicatesConfirm && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border-2 border-red-500">
+            <h3 className="text-xl font-bold text-red-700 mb-2">🧹 Remove Duplicate Values?</h3>
+            <p className="text-sm text-gray-700 mb-1">
+              &quot;{dupColumn}&quot; के आधार पर हर मान की सबसे पहली एंट्री रखी जाएगी, बाकी <strong>{duplicateIdsToRemove.length} duplicate रिकॉर्ड</strong> हटा दिए जाएंगे।
+            </p>
+            <p className="text-sm text-red-600 font-semibold mb-5">This action cannot be undone!</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowRemoveDuplicatesConfirm(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={handleRemoveDuplicates} disabled={removingDuplicates} className="px-5 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-60">
+                {removingDuplicates ? 'Removing...' : 'Yes, Remove Duplicates'}
               </button>
             </div>
           </div>
