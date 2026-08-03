@@ -49,6 +49,10 @@ export default function EvFinalV1Page() {
   const [savedRows, setSavedRows] = useState<EvFinalV1Row[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [searchColumn, setSearchColumn] = useState('') // '' = search across every column
+  const [filterColumn, setFilterColumn] = useState('') // '' = no column filter applied
+  const [filterByYear, setFilterByYear] = useState(false) // group filterColumn's values by the 4-digit year found inside them (for date columns)
+  const [filterValue, setFilterValue] = useState('')
   const [pageSize, setPageSize] = useState<number | 'all'>(50)
   const [page, setPage] = useState(1)
 
@@ -116,13 +120,62 @@ export default function EvFinalV1Page() {
 
   const columns = useMemo(() => computeColumns(savedRows), [savedRows])
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return savedRows
-    const q = search.trim().toLowerCase()
-    return savedRows.filter(r => Object.values(r.row_data || {}).some(v => String(v).toLowerCase().includes(q)))
-  }, [savedRows, search])
+  // Reset the column filter whenever the chosen column changes, so a
+  // stale value from a previous column never silently filters wrongly.
+  useEffect(() => { setFilterValue(''); setFilterByYear(false) }, [filterColumn])
 
-  useEffect(() => { setPage(1) }, [search, pageSize])
+  function yearOf(value: string): string | null {
+    const m = String(value || '').match(/\b(19|20)\d{2}\b/)
+    return m ? m[0] : null
+  }
+
+  // Distinct values available to filter on for the currently chosen
+  // column — either the raw values, or (when "साल के अनुसार" is on) just
+  // the 4-digit years found inside them, e.g. for a Registration Date
+  // column full of "2026-04-14 0.00.0" style values.
+  const filterOptions = useMemo(() => {
+    if (!filterColumn) return []
+    const values = new Set<string>()
+    savedRows.forEach(r => {
+      const v = r.row_data?.[filterColumn]
+      if (!v) return
+      if (filterByYear) {
+        const y = yearOf(v)
+        if (y) values.add(y)
+      } else {
+        values.add(v)
+      }
+    })
+    return [...values].sort()
+  }, [savedRows, filterColumn, filterByYear])
+
+  const columnLooksDateLike = useMemo(() => {
+    if (!filterColumn) return false
+    return savedRows.some(r => yearOf(r.row_data?.[filterColumn] || ''))
+  }, [savedRows, filterColumn])
+
+  const filtered = useMemo(() => {
+    let rows = savedRows
+
+    if (filterColumn && filterValue) {
+      rows = rows.filter(r => {
+        const v = r.row_data?.[filterColumn] || ''
+        return filterByYear ? yearOf(v) === filterValue : v === filterValue
+      })
+    }
+
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      rows = rows.filter(r => {
+        if (searchColumn) return String(r.row_data?.[searchColumn] || '').toLowerCase().includes(q)
+        return Object.values(r.row_data || {}).some(v => String(v).toLowerCase().includes(q))
+      })
+    }
+
+    return rows
+  }, [savedRows, search, searchColumn, filterColumn, filterValue, filterByYear])
+
+  useEffect(() => { setPage(1) }, [search, searchColumn, filterColumn, filterValue, filterByYear, pageSize])
 
   const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -287,16 +340,55 @@ export default function EvFinalV1Page() {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 mb-3">
+        <div className="flex flex-wrap gap-2 mb-2">
+          <select
+            value={searchColumn}
+            onChange={e => setSearchColumn(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
+            <option value="">सभी कॉलम में खोजें</option>
+            {columns.map(c => <option key={c} value={c}>{c} में खोजें</option>)}
+          </select>
           <input
             type="text"
-            placeholder="किसी भी कॉलम में खोजें..."
+            placeholder="खोजें..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[220px] focus:outline-none focus:ring-2 focus:ring-blue-300"
           />
           {search && (
             <button onClick={() => setSearch('')} className="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Reset</button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="text-xs font-semibold text-gray-500">फ़िल्टर:</span>
+          <select
+            value={filterColumn}
+            onChange={e => setFilterColumn(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
+            <option value="">कोई फ़िल्टर नहीं</option>
+            {columns.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {filterColumn && (
+            <>
+              {columnLooksDateLike && (
+                <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
+                  <input type="checkbox" checked={filterByYear} onChange={e => setFilterByYear(e.target.checked)} className="w-3.5 h-3.5 accent-blue-700" />
+                  साल के अनुसार (by year)
+                </label>
+              )}
+              <select
+                value={filterValue}
+                onChange={e => setFilterValue(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 min-w-[160px]"
+              >
+                <option value="">-- मान चुनें --</option>
+                {filterOptions.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+              <button onClick={() => { setFilterColumn(''); setFilterValue('') }} className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs hover:bg-gray-50">Clear filter</button>
+            </>
           )}
         </div>
 
