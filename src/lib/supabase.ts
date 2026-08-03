@@ -237,3 +237,10 @@ export type EvExtractedData = {
   vehicle_no: string
   created_at?: string
 }
+
+export type EvExcelStatusData = {
+  id?: number
+  vehicle_no: string
+  batch_name: string
+  created_at?: string
+}

@@ -30,6 +30,8 @@ const navItems: NavItem[] = [
       { href: '/subsidy-status', label: 'EV Subsidy Status' },
       { href: '/subsidy-extractor', label: 'EV Subsidy Extractor' },
       { href: '/subsidy-extracted-data', label: 'EV Extracted Data' },
+      { href: '/subsidy-excel-status', label: 'EV Extractor Excel Status' },
+      { href: '/subsidy-excel-status-data', label: 'EV Excel Status Data' },
     ],
   },
   {

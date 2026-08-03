@@ -229,6 +229,16 @@ CREATE TABLE IF NOT EXISTS ev_extracted_data (
 -- run this to allow duplicate vehicle numbers to be saved:
 -- ALTER TABLE ev_extracted_data DROP CONSTRAINT IF EXISTS ev_extracted_data_vehicle_no_key;
 
+-- 12. EV Extractor Excel Status — same paste-and-extract tool as EV Subsidy
+-- Extractor, but every save is tagged with a user-given batch/status name
+-- (e.g. "July Bank Success List"), stored on every extracted row.
+CREATE TABLE IF NOT EXISTS ev_excel_status_data (
+  id SERIAL PRIMARY KEY,
+  vehicle_no VARCHAR(50),
+  batch_name VARCHAR(255),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
 
@@ -246,6 +256,7 @@ CREATE POLICY "Allow all" ON subsidy_status FOR ALL USING (true) WITH CHECK (tru
 CREATE POLICY "Allow all" ON complaints_v2 FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON modify_status FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON ev_extracted_data FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON ev_excel_status_data FOR ALL USING (true) WITH CHECK (true);
 
 -- Enable RLS on all tables
 ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
@@ -260,3 +271,4 @@ ALTER TABLE subsidy_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE complaints_v2 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE modify_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ev_extracted_data ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ev_excel_status_data ENABLE ROW LEVEL SECURITY;
