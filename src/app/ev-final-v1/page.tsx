@@ -52,7 +52,8 @@ export default function EvFinalV1Page() {
   const [searchColumn, setSearchColumn] = useState('') // '' = search across every column
   const [filterColumn, setFilterColumn] = useState('') // '' = no column filter applied
   const [filterByYear, setFilterByYear] = useState(false) // group filterColumn's values by the 4-digit year found inside them (for date columns)
-  const [filterValue, setFilterValue] = useState('')
+  const [filterValues, setFilterValues] = useState<string[]>([]) // multi-select: empty = no filter applied
+  const [showFilterValuePicker, setShowFilterValuePicker] = useState(false)
   const [pageSize, setPageSize] = useState<number | 'all'>(50)
   const [page, setPage] = useState(1)
 
@@ -122,7 +123,7 @@ export default function EvFinalV1Page() {
 
   // Reset the column filter whenever the chosen column changes, so a
   // stale value from a previous column never silently filters wrongly.
-  useEffect(() => { setFilterValue(''); setFilterByYear(false) }, [filterColumn])
+  useEffect(() => { setFilterValues([]); setFilterByYear(false) }, [filterColumn])
 
   function yearOf(value: string): string | null {
     const m = String(value || '').match(/\b(19|20)\d{2}\b/)
@@ -157,10 +158,11 @@ export default function EvFinalV1Page() {
   const filtered = useMemo(() => {
     let rows = savedRows
 
-    if (filterColumn && filterValue) {
+    if (filterColumn && filterValues.length > 0) {
+      const wanted = new Set(filterValues)
       rows = rows.filter(r => {
         const v = r.row_data?.[filterColumn] || ''
-        return filterByYear ? yearOf(v) === filterValue : v === filterValue
+        return wanted.has(filterByYear ? (yearOf(v) || '') : v)
       })
     }
 
@@ -173,9 +175,9 @@ export default function EvFinalV1Page() {
     }
 
     return rows
-  }, [savedRows, search, searchColumn, filterColumn, filterValue, filterByYear])
+  }, [savedRows, search, searchColumn, filterColumn, filterValues, filterByYear])
 
-  useEffect(() => { setPage(1) }, [search, searchColumn, filterColumn, filterValue, filterByYear, pageSize])
+  useEffect(() => { setPage(1) }, [search, searchColumn, filterColumn, filterValues, filterByYear, pageSize])
 
   const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -379,15 +381,40 @@ export default function EvFinalV1Page() {
                   साल के अनुसार (by year)
                 </label>
               )}
-              <select
-                value={filterValue}
-                onChange={e => setFilterValue(e.target.value)}
-                className="border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 min-w-[160px]"
-              >
-                <option value="">-- मान चुनें --</option>
-                {filterOptions.map(v => <option key={v} value={v}>{v}</option>)}
-              </select>
-              <button onClick={() => { setFilterColumn(''); setFilterValue('') }} className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs hover:bg-gray-50">Clear filter</button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowFilterValuePicker(v => !v)}
+                  className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white hover:bg-gray-50 transition min-w-[180px] text-left"
+                >
+                  {filterValues.length === 0 ? '-- मान चुनें (multi) --' : `${filterValues.length} चुने गए`}
+                </button>
+                {showFilterValuePicker && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowFilterValuePicker(false)} />
+                    <div className="absolute left-0 top-full mt-1 w-64 max-h-80 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-2">
+                      <div className="flex justify-between items-center px-2 py-1 mb-1 border-b border-gray-100">
+                        <span className="text-xs font-semibold text-gray-500">एक या अधिक मान चुनें</span>
+                        <div className="flex gap-2">
+                          <button onClick={() => setFilterValues(filterOptions)} className="text-xs text-blue-700 hover:underline">All</button>
+                          <button onClick={() => setFilterValues([])} className="text-xs text-blue-700 hover:underline">None</button>
+                        </div>
+                      </div>
+                      {filterOptions.map(v => (
+                        <label key={v} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={filterValues.includes(v)}
+                            onChange={e => setFilterValues(prev => e.target.checked ? [...prev, v] : prev.filter(x => x !== v))}
+                            className="w-4 h-4 accent-blue-700"
+                          />
+                          {v}
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button onClick={() => { setFilterColumn(''); setFilterValues([]) }} className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-xs hover:bg-gray-50">Clear filter</button>
             </>
           )}
         </div>
