@@ -250,3 +250,9 @@ export type EvFinalV1Row = {
   row_data: Record<string, string>
   created_at?: string
 }
+
+export type CGTrans2022PendingRow = {
+  id?: number
+  row_data: Record<string, string>
+  created_at?: string
+}

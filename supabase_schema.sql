@@ -249,6 +249,15 @@ CREATE TABLE IF NOT EXISTS ev_final_v1 (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 14. CGTrans 2022 Pending Data — same generic wide-paste JSONB storage as
+-- EV Final V1, but kept in its own table so this older/separate CGTrans
+-- batch never mixes with the general EV Final V1 data.
+CREATE TABLE IF NOT EXISTS cgtrans_2022_pending (
+  id SERIAL PRIMARY KEY,
+  row_data JSONB NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) - optional, disable for internal use
 -- ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
 
@@ -268,6 +277,7 @@ CREATE POLICY "Allow all" ON modify_status FOR ALL USING (true) WITH CHECK (true
 CREATE POLICY "Allow all" ON ev_extracted_data FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON ev_excel_status_data FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON ev_final_v1 FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON cgtrans_2022_pending FOR ALL USING (true) WITH CHECK (true);
 
 -- Enable RLS on all tables
 ALTER TABLE backlog_entries ENABLE ROW LEVEL SECURITY;
@@ -284,3 +294,4 @@ ALTER TABLE modify_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ev_extracted_data ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ev_excel_status_data ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ev_final_v1 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cgtrans_2022_pending ENABLE ROW LEVEL SECURITY;
