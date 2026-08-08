@@ -51,6 +51,7 @@ const navItems: NavItem[] = [
     ],
   },
   { href: '/import', label: '📥 Import Data' },
+  { href: '/compare-vehicles', label: '🔍 Compare Vehicles' },
 ]
 
 function isGroup(item: NavItem): item is { label: string; children: NavLink[] } {
