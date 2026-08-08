@@ -54,13 +54,13 @@ export default function CompareVehiclesPage() {
   const [compared, setCompared] = useState(false)
   const [totalA, setTotalA] = useState(0)
   const [totalB, setTotalB] = useState(0)
-  const [matching, setMatching] = useState<string[]>([])
-  const [onlyA, setOnlyA] = useState<string[]>([])
-  const [onlyB, setOnlyB] = useState<string[]>([])
+  // Directional: Table A is the master data, Table B is the search list.
+  // Every vehicle number in B gets looked up in A — found vs not found.
+  const [found, setFound] = useState<string[]>([])
+  const [notFound, setNotFound] = useState<string[]>([])
 
-  const [searchMatch, setSearchMatch] = useState('')
-  const [searchA, setSearchA] = useState('')
-  const [searchB, setSearchB] = useState('')
+  const [searchFound, setSearchFound] = useState('')
+  const [searchNotFound, setSearchNotFound] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
   function showMsg(type: 'success' | 'error', text: string) {
@@ -119,15 +119,14 @@ export default function CompareVehiclesPage() {
       setTotalA(setA.size)
       setTotalB(setB.size)
 
-      const matchArr: string[] = []
-      const onlyAArr: string[] = []
-      setA.forEach(v => { if (setB.has(v)) matchArr.push(v); else onlyAArr.push(v) })
-      const onlyBArr: string[] = []
-      setB.forEach(v => { if (!setA.has(v)) onlyBArr.push(v) })
+      // Directional lookup: every vehicle number in the search list (B)
+      // is checked against the master data (A).
+      const foundArr: string[] = []
+      const notFoundArr: string[] = []
+      setB.forEach(v => { if (setA.has(v)) foundArr.push(v); else notFoundArr.push(v) })
 
-      setMatching(matchArr.sort())
-      setOnlyA(onlyAArr.sort())
-      setOnlyB(onlyBArr.sort())
+      setFound(foundArr.sort())
+      setNotFound(notFoundArr.sort())
       setCompared(true)
     } catch (e: any) {
       showMsg('error', e?.message || 'Compare failed')
@@ -135,23 +134,17 @@ export default function CompareVehiclesPage() {
     setComparing(false)
   }
 
-  const filteredMatch = useMemo(() => {
-    if (!searchMatch.trim()) return matching
-    const q = searchMatch.trim().toUpperCase()
-    return matching.filter(v => v.includes(q))
-  }, [matching, searchMatch])
+  const filteredFound = useMemo(() => {
+    if (!searchFound.trim()) return found
+    const q = searchFound.trim().toUpperCase()
+    return found.filter(v => v.includes(q))
+  }, [found, searchFound])
 
-  const filteredOnlyA = useMemo(() => {
-    if (!searchA.trim()) return onlyA
-    const q = searchA.trim().toUpperCase()
-    return onlyA.filter(v => v.includes(q))
-  }, [onlyA, searchA])
-
-  const filteredOnlyB = useMemo(() => {
-    if (!searchB.trim()) return onlyB
-    const q = searchB.trim().toUpperCase()
-    return onlyB.filter(v => v.includes(q))
-  }, [onlyB, searchB])
+  const filteredNotFound = useMemo(() => {
+    if (!searchNotFound.trim()) return notFound
+    const q = searchNotFound.trim().toUpperCase()
+    return notFound.filter(v => v.includes(q))
+  }, [notFound, searchNotFound])
 
   function copyList(key: string, list: string[]) {
     navigator.clipboard.writeText(list.join('\n'))
@@ -228,7 +221,7 @@ export default function CompareVehiclesPage() {
       <div className="w-full px-4 py-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-blue-900">Compare Vehicle Numbers</h1>
-          <p className="text-sm text-gray-500 mt-0.5">कोई भी दो टेबल चुनें — मिलते-जुलते और न मिलने वाले वाहन नंबर दोनों तरफ से दिखेंगे</p>
+          <p className="text-sm text-gray-500 mt-0.5">Table A को Master Data मानकर, Table B (Search List) का हर वाहन नंबर उसमें ढूँढा जाएगा — कौन मिला, कौन नहीं</p>
         </div>
 
         {message && (
@@ -240,7 +233,7 @@ export default function CompareVehiclesPage() {
         <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Table A</label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Table A <span className="text-blue-700 font-normal">(Master Data)</span></label>
               <select
                 value={tableA}
                 onChange={e => setTableA(e.target.value)}
@@ -268,7 +261,7 @@ export default function CompareVehiclesPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Table B</label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Table B <span className="text-amber-700 font-normal">(Search List)</span></label>
               <select
                 value={tableB}
                 onChange={e => setTableB(e.target.value)}
@@ -309,48 +302,43 @@ export default function CompareVehiclesPage() {
 
         {compared && (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
               <div className="bg-white border border-gray-200 rounded-xl px-3 py-3 text-center">
                 <div className="text-xl font-bold text-blue-900">{totalA}</div>
-                <div className="text-[11px] text-gray-500 mt-0.5">{optionA?.label} — कुल अद्वितीय वाहन नंबर</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">{optionA?.label} — Master में कुल वाहन नंबर</div>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl px-3 py-3 text-center">
                 <div className="text-xl font-bold text-blue-900">{totalB}</div>
-                <div className="text-[11px] text-gray-500 mt-0.5">{optionB?.label} — कुल अद्वितीय वाहन नंबर</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">{optionB?.label} — Search List में कुल वाहन नंबर</div>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl px-3 py-3 text-center">
-                <div className="text-xl font-bold text-green-700">{matching.length}</div>
-                <div className="text-[11px] text-gray-500 mt-0.5">दोनों में मिलते हुए (Matching)</div>
+                <div className="text-xl font-bold text-green-700">{found.length}</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">✅ Master में मिले (Found)</div>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl px-3 py-3 text-center">
+                <div className="text-xl font-bold text-red-700">{notFound.length}</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">❌ Master में नहीं मिले (Not Found)</div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <ResultSection
-                title="✅ Matching (दोनों में)"
-                subtitle={`${optionA?.label} और ${optionB?.label} दोनों में मौजूद`}
+                title="✅ Found in Master"
+                subtitle={`${optionB?.label} (Search List) के जो वाहन नंबर ${optionA?.label} (Master) में मौजूद हैं`}
                 colorClass="text-green-700"
-                list={filteredMatch}
-                search={searchMatch}
-                setSearch={setSearchMatch}
-                downloadName="matching_vehicle_numbers.txt"
+                list={filteredFound}
+                search={searchFound}
+                setSearch={setSearchFound}
+                downloadName="found_in_master.txt"
               />
               <ResultSection
-                title={`🅰️ केवल ${optionA?.label}`}
-                subtitle={`${optionB?.label} में नहीं मिले`}
-                colorClass="text-amber-700"
-                list={filteredOnlyA}
-                search={searchA}
-                setSearch={setSearchA}
-                downloadName="only_in_table_a.txt"
-              />
-              <ResultSection
-                title={`🅱️ केवल ${optionB?.label}`}
-                subtitle={`${optionA?.label} में नहीं मिले`}
-                colorClass="text-amber-700"
-                list={filteredOnlyB}
-                search={searchB}
-                setSearch={setSearchB}
-                downloadName="only_in_table_b.txt"
+                title="❌ Not Found in Master"
+                subtitle={`${optionB?.label} (Search List) के जो वाहन नंबर ${optionA?.label} (Master) में नहीं मिले`}
+                colorClass="text-red-700"
+                list={filteredNotFound}
+                search={searchNotFound}
+                setSearch={setSearchNotFound}
+                downloadName="not_found_in_master.txt"
               />
             </div>
           </>
