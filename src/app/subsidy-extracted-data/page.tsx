@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, EvExtractedData, fetchAllRows } from '@/lib/supabase'
+import { exportToExcel } from '@/lib/excelImport'
 import PinModal from '@/components/PinModal'
 
 const COLUMNS = [
@@ -232,6 +233,13 @@ export default function SubsidyExtractedDataPage() {
     URL.revokeObjectURL(url)
   }
 
+  function handleExportExcel() {
+    const visible = COLUMNS.filter(c => visibleCols[c.id] !== false)
+    const headers = visible.map(c => c.label)
+    const rows = filtered.map(e => visible.map(c => c.id === 'created_at' ? (e.created_at ? new Date(e.created_at).toLocaleDateString('en-IN') : '') : (e as any)[c.id] || ''))
+    exportToExcel(`ev_extracted_data_${new Date().toISOString().slice(0, 10)}.xlsx`, headers, rows)
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full px-4 py-6">
@@ -252,6 +260,9 @@ export default function SubsidyExtractedDataPage() {
             </button>
             <button onClick={downloadTxt} disabled={filtered.length === 0} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition disabled:opacity-40">
               💾 Download .txt
+            </button>
+            <button onClick={handleExportExcel} disabled={filtered.length === 0} className="px-4 py-2 rounded-lg border border-green-300 text-green-700 text-sm font-medium hover:bg-green-50 transition disabled:opacity-40">
+              📊 Export Excel
             </button>
             <button
               onClick={() => setShowDuplicatesOnly(v => !v)}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase, SubsidyEntry, fetchAllRows, fetchAllColumnValues } from '@/lib/supabase'
+import { exportToExcel } from '@/lib/excelImport'
 import PinModal from '@/components/PinModal'
 
 const BOOL_FIELDS = ['has_receipt', 'has_invoice', 'has_passbook', 'has_aadhaar', 'has_rc'] as const
@@ -203,6 +204,16 @@ export default function SubsidyPage() {
     has_rc: 'RC',
   }
 
+  function handleExportExcel() {
+    const headers = ['Vehicle No', 'Date Submitted', 'Entry By', 'Receipt', 'Invoice', 'Passbook', 'Aadhaar', 'RC']
+    const rows = filtered.map((e: any) => [
+      e.vehicle_no || '', e.date_submitted || '', e.entry_by || '',
+      e.has_receipt ? 'Yes' : 'No', e.has_invoice ? 'Yes' : 'No', e.has_passbook ? 'Yes' : 'No',
+      e.has_aadhaar ? 'Yes' : 'No', e.has_rc ? 'Yes' : 'No',
+    ])
+    exportToExcel(`subsidy_entries_${new Date().toISOString().slice(0, 10)}.xlsx`, headers, rows)
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 py-6">
@@ -217,6 +228,9 @@ export default function SubsidyPage() {
             </button>
             <button onClick={() => setShowBulk(true)} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition">
               📥 Bulk Import
+            </button>
+            <button onClick={handleExportExcel} disabled={filtered.length === 0} className="px-4 py-2 rounded-lg border border-green-300 text-green-700 text-sm font-medium hover:bg-green-50 transition disabled:opacity-40">
+              📊 Export Excel
             </button>
             <button onClick={openAdd} className="px-4 py-2 rounded-lg bg-blue-900 text-white text-sm font-medium hover:bg-blue-800 transition">
               + Add Entry

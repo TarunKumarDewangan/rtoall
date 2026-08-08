@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, SubsidyStatus, fetchAllRows, fetchAllColumnValues } from '@/lib/supabase'
-import { parseExcelFile } from '@/lib/excelImport'
+import { parseExcelFile, exportToExcel } from '@/lib/excelImport'
 import PinModal from '@/components/PinModal'
 
 // Normalized header text -> field key, used to match an uploaded Excel
@@ -289,6 +289,18 @@ export default function SubsidyStatusPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  function handleExportExcel() {
+    const visible = COLUMNS.filter(c => visibleCols[c.id] !== false)
+    const headers = visible.map(c => c.label)
+    const rows = filtered.map(e => visible.map(c => {
+      const v = (e as any)[c.id]
+      if (c.id === 'application_date' || c.id === 'transfer_date') return fromISODate(v) || ''
+      if (c.id === 'amount') return v != null ? v : ''
+      return v || ''
+    }))
+    exportToExcel(`subsidy_status_${new Date().toISOString().slice(0, 10)}.xlsx`, headers, rows)
+  }
+
   function openAdd() {
     setEditEntry(null)
     setForm(EMPTY_FORM)
@@ -490,6 +502,9 @@ export default function SubsidyStatusPage() {
             </button>
             <button onClick={copyAll} disabled={filtered.length === 0} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition disabled:opacity-40">
               {copied ? '✅ Copied!' : '📋 Copy All'}
+            </button>
+            <button onClick={handleExportExcel} disabled={filtered.length === 0} className="px-4 py-2 rounded-lg border border-green-300 text-green-700 text-sm font-medium hover:bg-green-50 transition disabled:opacity-40">
+              📊 Export Excel
             </button>
             <button
               onClick={() => setShowDuplicatesOnly(v => !v)}

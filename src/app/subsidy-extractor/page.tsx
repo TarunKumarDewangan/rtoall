@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { exportToExcel } from '@/lib/excelImport'
 
 // Whole-token capture, on purpose: any whitespace-separated token that
 // starts with "CG" + a 2-digit district code is taken in full, exactly as
@@ -59,6 +60,10 @@ export default function SubsidyExtractorPage() {
     a.download = `vehicle_numbers_${new Date().toISOString().slice(0, 10)}.txt`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  function handleExportExcel() {
+    exportToExcel(`vehicle_numbers_${new Date().toISOString().slice(0, 10)}.xlsx`, ['Vehicle No'], vehicleNumbers.map(v => [v]))
   }
 
   // Saves exactly what's on screen, duplicates included — no dedup, no
@@ -162,6 +167,13 @@ export default function SubsidyExtractorPage() {
                 className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition disabled:opacity-40"
               >
                 💾 Download .txt
+              </button>
+              <button
+                onClick={handleExportExcel}
+                disabled={vehicleNumbers.length === 0}
+                className="px-4 py-2 rounded-lg border border-green-300 text-green-700 text-sm font-medium hover:bg-green-50 transition disabled:opacity-40"
+              >
+                📊 Export Excel
               </button>
               <button
                 onClick={saveToDatabase}

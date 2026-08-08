@@ -68,3 +68,12 @@ export async function parseExcelFile(
 
   return { rows }
 }
+
+// Builds a one-sheet .xlsx from a header row + data rows and triggers a
+// browser download — the export counterpart to parseExcelFile above.
+export function exportToExcel(filename: string, headers: string[], rows: (string | number)[][]) {
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1')
+  XLSX.writeFile(workbook, filename)
+}

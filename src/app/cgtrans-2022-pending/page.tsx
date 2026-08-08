@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, CGTrans2022PendingRow, fetchAllRows } from '@/lib/supabase'
+import { exportToExcel } from '@/lib/excelImport'
 import PinModal from '@/components/PinModal'
 
 // Expects the first pasted line to be a tab-separated header row (exactly
@@ -353,6 +354,12 @@ export default function CGTrans2022PendingPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  function handleExportExcel() {
+    const visibleColumns = columns.filter(c => visibleCols[c] !== false)
+    const rows = filtered.map(r => visibleColumns.map(c => r.row_data?.[c] || ''))
+    exportToExcel(`cgtrans_2022_pending_${new Date().toISOString().slice(0, 10)}.xlsx`, visibleColumns, rows)
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full px-4 py-6">
@@ -438,6 +445,9 @@ export default function CGTrans2022PendingPage() {
             </button>
             <button onClick={copyAll} disabled={filtered.length === 0} className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition disabled:opacity-40">
               {copied ? '✅ Copied!' : '📋 Copy All'}
+            </button>
+            <button onClick={handleExportExcel} disabled={filtered.length === 0} className="px-4 py-2 rounded-lg border border-green-300 text-green-700 text-sm font-medium hover:bg-green-50 transition disabled:opacity-40">
+              📊 Export Excel
             </button>
             <div className="relative">
               <button onClick={() => setShowColPicker(v => !v)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition">

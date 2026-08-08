@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { exportToExcel } from '@/lib/excelImport'
 
 // Whole-token capture, same as the plain EV Subsidy Extractor: any
 // whitespace-separated token starting with "CG" + 2-digit district code is
@@ -53,6 +54,11 @@ export default function SubsidyExcelStatusPage() {
     a.download = `${(batchName || 'vehicle_numbers').replace(/[^a-z0-9]+/gi, '_')}_${new Date().toISOString().slice(0, 10)}.txt`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  function handleExportExcel() {
+    const filename = `${(batchName || 'vehicle_numbers').replace(/[^a-z0-9]+/gi, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`
+    exportToExcel(filename, ['Vehicle No', 'Name'], vehicleNumbers.map(v => [v, batchName]))
   }
 
   // Every saved row is tagged with the given batch name — that's the whole
@@ -171,6 +177,13 @@ export default function SubsidyExcelStatusPage() {
                 className="px-4 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50 transition disabled:opacity-40"
               >
                 💾 Download .txt
+              </button>
+              <button
+                onClick={handleExportExcel}
+                disabled={vehicleNumbers.length === 0}
+                className="px-4 py-2 rounded-lg border border-green-300 text-green-700 text-sm font-medium hover:bg-green-50 transition disabled:opacity-40"
+              >
+                📊 Export Excel
               </button>
               <button
                 onClick={saveToDatabase}
